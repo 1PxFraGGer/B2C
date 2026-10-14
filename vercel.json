@@ -1,0 +1,7 @@
+{
+  "buildCommand":"npm run build", "outputDirectory":"dist", "framework":"vite",
+  "functions":{"api/index.mjs":{"maxDuration":60}},
+  "rewrites":[{"source":"/api/:action","destination":"/api/index?action=:action"},{"source":"/((?!api/).*)","destination":"/index.html"}],
+  "headers":[{"source":"/(.*)","headers":[{"key":"X-Content-Type-Options","value":"nosniff"},{"key":"Referrer-Policy","value":"same-origin"},{"key":"X-Frame-Options","value":"DENY"},{"key":"Content-Security-Policy","value":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}]}]
+}
+

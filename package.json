@@ -1,0 +1,7 @@
+{
+  "name": "university-task-dashboard", "version": "1.0.0", "private": true, "type": "module",
+  "scripts": {"dev":"node server/dev.mjs", "build":"vite build", "test":"node --test tests/*.test.mjs", "check":"node --check api/index.mjs && node --check server/auth.mjs && node --check server/google.mjs"},
+  "dependencies": {"react":"^19.2.0","react-dom":"^19.2.0","react-router-dom":"^7.9.0","lucide-react":"^0.468.0","framer-motion":"^12.0.0","recharts":"^3.0.0","@xmldom/xmldom":"^0.8.11"},
+  "devDependencies": {"vite":"^7.1.0","@vitejs/plugin-react":"^5.0.0","tailwindcss":"^4.1.0","@tailwindcss/vite":"^4.1.0"}
+}
+
