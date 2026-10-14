@@ -22,8 +22,8 @@ export function assertCsrf(req,token) {
   assertOrigin(req);const received=String(req.headers['x-csrf-token']||'');const expected=csrf(token||'');
   if(received.length!==expected.length||!timingSafeEqual(Buffer.from(received),Buffer.from(expected)))throw new ApiError('Invalid request token. Refresh and try again.',403);
 }
-export function cookie(token,maxAge=28800) {
-  return `university_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${process.env.NODE_ENV==='production'?'; Secure':''}`;
+export function cookie(token,maxAge=null) {
+  return `university_session=${token}; Path=/; HttpOnly; SameSite=Strict${maxAge===null?'':`; Max-Age=${maxAge}`}${process.env.NODE_ENV==='production'?'; Secure':''}`;
 }
 export async function login(req,body) {
   assertOrigin(req);

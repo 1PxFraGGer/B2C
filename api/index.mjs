@@ -1,5 +1,5 @@
 import {google,ApiError} from '../server/google.mjs';
-import {login,requireSession,cookie,csrf,assertCsrf} from '../server/auth.mjs';
+import {login,requireSession,cookie,csrf,assertCsrf,assertOrigin,sessionToken} from '../server/auth.mjs';
 import {validateImage} from '../server/files.mjs';
 const writeActions=new Set(['saveItem','saveContent']);
 export default async function handler(req,res) {
@@ -9,17 +9,24 @@ export default async function handler(req,res) {
     const body=req.body||{};
     if(action==='login'){
       if(req.method!=='POST')throw new ApiError('Method not allowed',405);
-      const result=await login(req,body);res.setHeader('Set-Cookie',cookie(result.token));return res.status(200).json({user:result.identity,csrf:csrf(result.token)});
+      const result=await login(req,body);res.setHeader('Set-Cookie',cookie(result.token,body.rememberMe===true?28800:null));return res.status(200).json({user:result.identity,csrf:csrf(result.token)});
     }
     if(action==='session'){
       if(req.method!=='GET')throw new ApiError('Method not allowed',405);
       const s=await requireSession(req);return res.status(200).json({user:s.identity,csrf:csrf(s.token)});
     }
-    const s=await requireSession(req);
     if(action==='logout'){
       if(req.method!=='POST')throw new ApiError('Method not allowed',405);
-      assertCsrf(req,s.token);await google('sessionDelete',{},s.token);res.setHeader('Set-Cookie',cookie('',0));return res.status(200).json({ok:true});
+      assertOrigin(req);
+      const token=sessionToken(req);
+      if(token){
+        assertCsrf(req,token);
+        // Expired sessions are already revoked; clearing their cookie still succeeds.
+        try{await google('sessionDelete',{},token);}catch(error){if(error.status!==401)throw error;}
+      }
+      res.setHeader('Set-Cookie',cookie('',0));return res.status(200).json({ok:true});
     }
+    const s=await requireSession(req);
     if(action==='data'||action==='reports'){
       if(req.method!=='GET')throw new ApiError('Method not allowed',405);
       if(action==='reports'&&s.identity.role!=='admin')throw new ApiError('Admin access required',403);
