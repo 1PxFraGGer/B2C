@@ -58,3 +58,20 @@ test('a successful replacement keeps the original private file for recovery',()=
  const f=fixture({replacement:true}),r=f.context.saveItem_(f.user,f.payload);assert.equal(r.item.imageFileId,'file-1');assert.equal(f.old.trashed,false);
 });
 
+test('upload sets Done even when submitted as Pending',()=>{
+ const f=fixture(),r=f.context.saveItem_(f.user,{...f.payload,status:'Pending'});assert.equal(r.item.status,'Done');
+});
+test('removing image clears only references and resets Pending; original stays recoverable',()=>{
+ const f=fixture({replacement:true}),r=f.context.saveItem_(f.user,{...f.payload,image:null,removeImage:true});assert.equal(r.item.status,'Pending');assert.equal(r.item.imageFileId,'');assert.equal(r.item.imageUrl,'');assert.equal(r.item.folderId,'');assert.equal(f.old.trashed,false);assert.equal(f.files.length,0);
+});
+test('failed image removal preserves original image and Done status',()=>{
+ const f=fixture({replacement:true,fail:true});assert.throws(()=>f.context.saveItem_(f.user,{...f.payload,image:null,removeImage:true}));assert.equal(f.tables.USP_Ranking_Items.rows[0]['Image File ID'],'old-file');assert.equal(f.tables.USP_Ranking_Items.rows[0].Status,'Done');assert.equal(f.old.trashed,false);
+});
+test('content status follows nonblank remarks and clearing remarks resets Pending',()=>{
+ const f=fixture(),names=['Overview','Program & Fees','Admission','Placement','Student Support','FAQs'];
+ f.tables.Content_Verification.headers=['Assignment ID','Date','University Name','Assigned To','Member ID','Version','Last Updated','Completed At',...names.flatMap(n=>[n+' Status',n+' Remarks'])];
+ f.tables.Content_Verification.rows=[{_row:2,'Assignment ID':'CONTENT-1',Date:'2026-10-15','University Name':'Test University','Assigned To':'Sahil','Member ID':'MEM-SAHIL',Version:1}];
+ let r=f.context.saveContent_(f.user,{assignmentId:'CONTENT-1',version:1,operationId:randomUUID(),pages:names.map((name,i)=>({name,status:'Pending',remarks:i===0?'Checked content':''}))});assert.equal(r.assignment.pages[0].status,'Done');assert.equal(r.assignment.completed,1);
+ r=f.context.saveContent_(f.user,{assignmentId:'CONTENT-1',version:2,operationId:randomUUID(),pages:names.map(name=>({name,status:'Done',remarks:'  '}))});assert.equal(r.assignment.completed,0);assert(r.assignment.pages.every(p=>p.status==='Pending'));
+});
+

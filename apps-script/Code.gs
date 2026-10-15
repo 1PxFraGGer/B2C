@@ -169,12 +169,15 @@ function saveItem_(user,p){
   const ctx=itemContext_(user,p.itemId),{item,assignment,d}=ctx;operation_(p.operationId);
   if(seen_(user,p.operationId,item['Item ID'],assignment['Assignment ID']))return {item:itemView_(item),duplicate:true};
   version_(item,p.version);if(!['Pending','Done'].includes(p.status)||typeof p.remarks!=='string'||p.remarks.length>5000)failure_('Invalid status or remarks');
-  let newFile,folder;const now=new Date().toISOString();
+  if(p.removeImage&&p.image)failure_('Choose either image removal or replacement');
+    let newFile,folder;const now=new Date().toISOString();
   try{
     if(p.image){const image=validateImage_(p.image);folder=destination_(assignment,item);const filename=safeName_(item['Item Name'])+'-'+safeName_(item['Item ID'])+'-'+Utilities.getUuid()+'.'+image.extension;newFile=folder.createFile(Utilities.newBlob(image.bytes,image.mime,filename));}
-    if(p.status==='Done'&&!newFile)existingImage_(item);
+    if(p.removeImage)p.status='Pending';else if(newFile)p.status='Done';
+      if(p.status==='Done'&&!newFile)existingImage_(item);
     const changes={'Status':p.status,'Remarks':p.remarks,'Last Updated':now,'Member ID':member_(assignment,d.members),'Version':(Number(item.Version)||0)+1,'Completed At':p.status==='Done'?(item.Status==='Done'?item['Completed At']||now:now):''};
-    if(newFile)Object.assign(changes,{'Image File ID':newFile.getId(),'Image URL':newFile.getUrl(),'Image Preview':{formula:'=HYPERLINK(J'+item._row+',"Open saved image")'},'Item Folder ID':folder.getId()});
+    if(p.removeImage)Object.assign(changes,{'Image File ID':'','Image URL':'','Image Preview':'','Item Folder ID':''});
+      if(newFile)Object.assign(changes,{'Image File ID':newFile.getId(),'Image URL':newFile.getUrl(),'Image Preview':{formula:'=HYPERLINK(J'+item._row+',"Open saved image")'},'Item Folder ID':folder.getId()});
     const next={...item,...changes},oldItems=d.items.map(itemView_),nextItems=d.items.map(r=>itemView_(key_(r['Item ID'])===key_(item['Item ID'])?next:r));
     const previousAssignment=assignmentView_(assignment,oldItems),updatedAssignment=assignmentView_(assignment,nextItems);
     const assignmentChanges={'Last Updated':now,'Version':(Number(assignment.Version)||0)+1,'Member ID':member_(assignment,d.members),'Completed At':updatedAssignment.status==='Completed'?(previousAssignment.status==='Completed'?assignment['Completed At']||now:now):''};
@@ -201,7 +204,7 @@ function saveContent_(user,p){
   if(seen_(user,p.operationId,'',row['Assignment ID']))return {assignment:contentView_(row),duplicate:true};version_(row,p.version);
   if(!Array.isArray(p.pages)||p.pages.length!==6||new Set(p.pages.map(p=>p.name)).size!==6)failure_('All six subpages are required');
   const changes={'Last Updated':new Date().toISOString(),'Version':(Number(row.Version)||0)+1,'Member ID':member_(row,d.members)};
-  p.pages.forEach(page=>{if(!PAGES.includes(page.name)||!['Pending','Done'].includes(page.status)||typeof page.remarks!=='string'||page.remarks.length>5000)failure_('Invalid subpage');changes[page.name+' Status']=page.status;changes[page.name+' Remarks']=page.remarks;});
+  p.pages.forEach(page=>{if(!PAGES.includes(page.name)||!['Pending','Done'].includes(page.status)||typeof page.remarks!=='string'||page.remarks.length>5000)failure_('Invalid subpage');changes[page.name+' Status']=page.remarks.trim()?'Done':'Pending';changes[page.name+' Remarks']=page.remarks;});
   const before=contentView_(row),after=contentView_({...row,...changes});changes['Completed At']=after.status==='Completed'?(before.status==='Completed'?row['Completed At']||changes['Last Updated']:changes['Last Updated']):'';
   const requests=[rowRequest_('Content_Verification',row,changes),logRequest_(user,row['University Name'],'Content verification',before,after,'Content Updated',row['Assignment ID'],'',p.operationId)];
   if(before.status!==after.status)requests.push(logRequest_(user,row['University Name'],'University assignment',{status:before.status},{status:after.status},after.status==='Completed'?'Assignment Completed':'Assignment Status Changed',row['Assignment ID'],'',p.operationId));
@@ -213,3 +216,4 @@ function checkSetup(){
   const book=workbook_();['Content_Verification','USP_Ranking_Assignments','USP_Ranking_Items','Team_Members','Activity_Log','Admin_Users'].forEach(name=>{if(!book.getSheetByName(name))failure_('Missing sheet: '+name);});
   privateRoot_();Sheets.Spreadsheets.get(SHEET_ID,{fields:'spreadsheetId'});console.log('Google backend configuration verified.');
 }
+
