@@ -84,7 +84,7 @@ function visible_(row,user,members){return user.role==='admin'||member_(row,memb
 function contentView_(r){
   const pages=PAGES.map(name=>({name,status:r[name+' Status']==='Done'?'Done':'Pending',remarks:String(r[name+' Remarks']||'')}));
   const completed=pages.filter(p=>p.status==='Done').length;
-  return {id:key_(r['Assignment ID']),date:r.Date,university:r['University Name'],liveLink:String(r['Live Link']||'').trim(),assignedTo:r['Assigned To'],memberId:r['Member ID'],version:Number(r.Version)||0,completed,total:6,progress:completed/6,status:completed===6?'Completed':completed?'In Progress':'Pending',lastUpdated:r['Last Updated'],completedAt:r['Completed At'],pages};
+  return {id:key_(r['Assignment ID']),date:r.Date,university:r['University Name'],liveLink:String(r['Live Link']||'').trim(),universityCheckLink:String(r['University Check Link']||'').trim(),assignedTo:r['Assigned To'],memberId:r['Member ID'],version:Number(r.Version)||0,completed,total:6,progress:completed/6,status:completed===6?'Completed':completed?'In Progress':'Pending',lastUpdated:r['Last Updated'],completedAt:r['Completed At'],pages};
 }
 function itemView_(r){return {id:key_(r['Item ID']),assignmentId:key_(r['Assignment ID']),university:r['University Name'],assignedTo:r['Assigned To'],type:r.Type,name:r['Item Name'],description:String(r.Description||''),status:r.Status==='Done'?'Done':'Pending',imageFileId:key_(r['Image File ID']),imageUrl:String(r['Image URL']||''),remarks:String(r.Remarks||''),version:Number(r.Version)||0,lastUpdated:r['Last Updated'],completedAt:r['Completed At'],folderId:key_(r['Item Folder ID'])};}
 function assignmentView_(r,items){
