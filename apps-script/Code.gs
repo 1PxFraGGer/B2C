@@ -2,11 +2,13 @@
 const SHEET_ID = '160hjCLAHaSTU_TedLYla_BqrMXXgbcaiJNaoEL-_l7k';
 const ROOT_FOLDER_ID = '1FJ1jHU-koTlzKdo9qKw7-lbU88uFzjJH';
 const MAX_BYTES = 2 * 1024 * 1024;
+let requestTables_ = {}, requestBook_ = null;
 const PAGES = ['Overview','Program & Fees','Admission','Placement','Student Support','FAQs'];
 function failure_(message,status){const error=new Error(message);error.status=status||400;throw error;}
 function json_(value){return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);}
 function doGet(){return json_({ok:false,error:'Authenticated POST required',status:405});}
 function doPost(e){
+  requestTables_ = {}; requestBook_ = null;
   let lock;
   try{
     if(!e||!e.postData||e.postData.contents.length>3000000)failure_('Invalid request',413);
@@ -17,10 +19,16 @@ function doPost(e){
     if(!equal_(expected,envelope.signature))failure_('Unauthorized',401);
     const request=JSON.parse(envelope.body);
     if(!Number.isFinite(request.timestamp)||Math.abs(Date.now()-request.timestamp)>120000||!/^[-\w]{20,80}$/.test(request.requestId||''))failure_('Expired request',401);
-    lock=LockService.getScriptLock();if(!lock.tryLock(10000))failure_('Another save is in progress. Please retry.',503);
+    const candidate=LockService.getScriptLock();if(!candidate.tryLock(10000))failure_('Another save is in progress. Please retry.',503);lock=candidate;
     const cache=CacheService.getScriptCache(),nonce='nonce:'+request.requestId;
     if(cache.get(nonce))failure_('Request already processed',409);cache.put(nonce,'1',180);
     const action=request.action,p=request.payload||{};
+    // Reserve the nonce atomically, then allow independent reads and previews concurrently.
+    if(['sessionRead','data','reports','image'].includes(action)){lock.releaseLock();lock=null;}
+    const names=['Team_Members','Admin_Users'];
+    if(['data','reports','saveItem','saveContent'].includes(action))names.push('Content_Verification','USP_Ranking_Assignments','USP_Ranking_Items','Activity_Log');
+    else if(action==='image')names.push('USP_Ranking_Assignments','USP_Ranking_Items');
+    if(action!=='loginRate')primeTables_(names);
     if(action==='loginRate')return json_({ok:true,data:rate_(p.loginId)});
     if(action==='sessionCreate')return json_({ok:true,data:createSession_(p)});
     const user=session_(request.session);
@@ -38,13 +46,24 @@ function doPost(e){
 }
 function equal_(a,b){if(a.length!==b.length)return false;let result=0;for(let i=0;i<a.length;i++)result|=a.charCodeAt(i)^b.charCodeAt(i);return result===0;}
 function digest_(value){return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(value),Utilities.Charset.UTF_8).map(b=>('0'+(b&255).toString(16)).slice(-2)).join('');}
-function workbook_(){return SpreadsheetApp.openById(SHEET_ID);}
+function workbook_(){return requestBook_ || (requestBook_=SpreadsheetApp.openById(SHEET_ID));}
+function primeTables_(names){
+  const missing=names.filter(name=>!requestTables_[name]);if(!missing.length)return;
+  const result=Sheets.Spreadsheets.Values.batchGet(SHEET_ID,{ranges:missing.map(name=>"'"+name+"'!A:Z"),valueRenderOption:'UNFORMATTED_VALUE',dateTimeRenderOption:'SERIAL_NUMBER'});
+  missing.forEach((name,i)=>{requestTables_[name]=tableValues_(name,result.valueRanges[i].values||[]);});
+}
+function tableValues_(name,values,sheet){
+  const headers=values[0]||[];
+  const rows=values.slice(1).map((values,i)=>{const row={_row:i+2};headers.forEach((h,j)=>{let v=values[j]===undefined?'':values[j];if(h==='Date'&&typeof v==='number')v=new Date(Math.round((v-25569)*86400000)).toISOString().slice(0,10);row[h]=v instanceof Date?v.toISOString():v;});return row;}).filter(row=>headers.some(h=>row[h]!==''));
+  const table={headers,rows};let resolved=sheet;
+  Object.defineProperty(table,'sheet',{get(){return resolved || (resolved=workbook_().getSheetByName(name));}});
+  return table;
+}
 function table_(name){
+  if(requestTables_[name])return requestTables_[name];
   const sheet=workbook_().getSheetByName(name);if(!sheet)failure_('Missing sheet: '+name,503);
-  const last=sheet.getLastRow(),width=sheet.getLastColumn();
-  const values=sheet.getRange(1,1,Math.max(last,1),width).getValues(),headers=values[0];
-  const rows=values.slice(1).map((values,i)=>{const row={_row:i+2};headers.forEach((h,j)=>{row[h]=values[j] instanceof Date?values[j].toISOString():values[j];});return row;});
-  return {sheet,headers,rows};
+  const values=sheet.getRange(1,1,Math.max(sheet.getLastRow(),1),sheet.getLastColumn()).getValues();
+  return requestTables_[name]=tableValues_(name,values,sheet);
 }
 function required_(record,fields){return fields.every(key=>record[key]!==''&&record[key]!==null&&record[key]!==undefined);}
 function key_(value){return String(value==null?'':value);}
@@ -191,6 +210,7 @@ function saveItem_(user,p){
       // An API timeout can happen after Google committed the batch. Verify before cleanup.
       let definitelyUncommitted=false;
       try{
+        delete requestTables_['USP_Ranking_Items'];delete requestTables_['Activity_Log'];
         const current=unique_(table_('USP_Ranking_Items').rows,item['Item ID'],'Item ID');
         if(current['Image File ID']===newFile.getId()&&seen_(user,p.operationId,item['Item ID'],assignment['Assignment ID']))return {item:itemView_(current),recovered:true};
         definitelyUncommitted=key_(current['Image File ID'])===key_(item['Image File ID']);
@@ -216,4 +236,3 @@ function checkSetup(){
   const book=workbook_();['Content_Verification','USP_Ranking_Assignments','USP_Ranking_Items','Team_Members','Activity_Log','Admin_Users'].forEach(name=>{if(!book.getSheetByName(name))failure_('Missing sheet: '+name);});
   privateRoot_();Sheets.Spreadsheets.get(SHEET_ID,{fields:'spreadsheetId'});console.log('Google backend configuration verified.');
 }
-

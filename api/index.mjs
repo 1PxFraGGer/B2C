@@ -26,10 +26,11 @@ export default async function handler(req,res) {
       }
       res.setHeader('Set-Cookie',cookie('',0));return res.status(200).json({ok:true});
     }
-    const s=await requireSession(req);
+    // Google validates the session and current Sheet profile inside each operation.
+    const token=sessionToken(req);if(!token||!/^[a-f0-9]{64}$/.test(token))throw new ApiError('Please sign in',401);
+    const s={token};
     if(action==='data'||action==='reports'){
       if(req.method!=='GET')throw new ApiError('Method not allowed',405);
-      if(action==='reports'&&s.identity.role!=='admin')throw new ApiError('Admin access required',403);
       return res.status(200).json(await google(action,{},s.token));
     }
     if(writeActions.has(action)){
