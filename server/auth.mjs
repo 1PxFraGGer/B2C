@@ -4,7 +4,16 @@ import {google,ApiError} from './google.mjs';
 const derive=promisify(scrypt);
 export function accounts() {
   if(!process.env.AUTH_ACCOUNTS_BASE64)throw new ApiError('Login accounts are not configured on the server.',503);
-  let users;try{users=JSON.parse(Buffer.from(process.env.AUTH_ACCOUNTS_BASE64,'base64').toString());}catch{throw new ApiError('Invalid login configuration',503);}
+  let users;
+  try {
+    users=JSON.parse(Buffer.from(process.env.AUTH_ACCOUNTS_BASE64,'base64').toString());
+    if(!Array.isArray(users)||!users.length)throw new Error('Invalid base accounts');
+    if(process.env.AUTH_ADDITIONAL_ACCOUNTS_BASE64){
+      const additional=JSON.parse(Buffer.from(process.env.AUTH_ADDITIONAL_ACCOUNTS_BASE64,'base64').toString());
+      if(!Array.isArray(additional))throw new Error('Invalid additional accounts');
+      users=[...users,...additional];
+    }
+  }catch{throw new ApiError('Invalid login configuration',503);}
   if(!Array.isArray(users)||!users.length||new Set(users.map(u=>u.loginId)).size!==users.length)throw new ApiError('Invalid login configuration',503);
   for(const u of users)if(!u.id||!['employee','admin'].includes(u.role)||!/^[a-f0-9]{32}$/.test(u.salt)||!/^[a-f0-9]{128}$/.test(u.passwordHash))throw new ApiError('Invalid login configuration',503);
   return users;
