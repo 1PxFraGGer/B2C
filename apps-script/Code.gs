@@ -30,7 +30,7 @@ function doPost(e){
     // Reserve the nonce atomically, then allow independent reads and previews concurrently.
     if(['sessionRead','data','reports','image'].includes(action)){lock.releaseLock();lock=null;}
     const names=['Team_Members','Admin_Users'];
-    if(['data','reports','saveItem','saveContent'].includes(action))names.push('Content_Verification','USP_Ranking_Assignments','USP_Ranking_Items','Activity_Log');
+    if(['data','reports','saveItem','saveContent','createBacklink','saveBacklink'].includes(action))names.push('Content_Verification','USP_Ranking_Assignments','USP_Ranking_Items','Activity_Log','Backlink_Assignments','Backlink_Submissions');
     else if(action==='image')names.push('USP_Ranking_Assignments','USP_Ranking_Items');
     if(action!=='loginRate')primeTables_(names);
     if(action==='loginRate')return json_({ok:true,data:rate_(p.loginId)});
@@ -42,6 +42,8 @@ function doPost(e){
     else if(action==='data'||action==='reports'){if(action==='reports'&&user.role!=='admin')failure_('Admin access required',403);data=workspace_(user,action==='reports');}
     else if(action==='saveItem')data=saveItem_(user,p);
     else if(action==='saveContent')data=saveContent_(user,p);
+    else if(action==='createBacklink')data=createBacklink_(user,p);
+    else if(action==='saveBacklink')data=saveBacklink_(user,p);
     else if(action==='image')data=image_(user,p.itemId);
     else failure_('Unknown action',404);
     return json_({ok:true,data});
@@ -123,11 +125,11 @@ function dataTables_(){
   return {members,content,assignments,items};
 }
 function workspace_(user,reports){
-  const d=dataTables_(),allContent=d.content.map(contentView_),allItems=d.items.map(itemView_),allAssignments=d.assignments.map(r=>assignmentView_(r,allItems));
-  const employeeStats=d.members.map(m=>{const isContent=m.Team==='Content Verification',records=(isContent?d.content:d.assignments).filter(r=>member_(r,d.members)===m['Member ID']);return {id:m['Member ID'],name:m['Employee Name'],team:m.Team,active:m['Active Status']==='Active',...totals_(records.map(r=>isContent?contentView_(r):assignmentView_(r,allItems)))};});
+  const d=dataTables_(),b=backlinkTables_(),allContent=d.content.map(contentView_),allItems=d.items.map(itemView_),allAssignments=d.assignments.map(r=>assignmentView_(r,allItems)),allBacklinks=b.assignments.map(r=>backlinkView_(r,b.submissions));
+  const employeeStats=d.members.map(m=>{const isContent=m.Team==='Content Verification',isBacklink=m.Team==='Backlink Team',records=(isBacklink?b.assignments:isContent?d.content:d.assignments).filter(r=>(isBacklink?key_(r['Member ID']):member_(r,d.members))===m['Member ID']);return {id:m['Member ID'],name:m['Employee Name'],team:m.Team,active:m['Active Status']==='Active',platforms:backlinkPlatforms_(m['Member ID']),...totals_(records.map(r=>isBacklink?backlinkView_(r,b.submissions):isContent?contentView_(r):assignmentView_(r,allItems)))};});
   const activity=table_('Activity_Log').rows.filter(r=>r.Timestamp&&(user.role==='admin'||r['Member ID']===user.memberId)).map(r=>({timestamp:r.Timestamp,employee:r.Employee,team:r.Team,university:r.University,task:r.Task,action:r.Action,assignmentId:key_(r['Assignment ID']),itemId:key_(r['Item ID']),previous:r['Previous Value'],updated:r['Updated Value']}));
-  return {user,members:employeeStats,stats:totals_([...allContent,...allAssignments]),teams:{content:totals_(allContent),usp:totals_(allAssignments)},
-    content:d.content.filter(r=>visible_(r,user,d.members)).map(contentView_),assignments:d.assignments.filter(r=>visible_(r,user,d.members)).map(r=>assignmentView_(r,allItems)),activity:reports?activity:activity.slice(-30).reverse()};
+  return {user,members:employeeStats,stats:totals_([...allContent,...allAssignments,...allBacklinks]),teams:{content:totals_(allContent),usp:totals_(allAssignments),backlink:totals_(allBacklinks)},
+    content:d.content.filter(r=>visible_(r,user,d.members)).map(contentView_),assignments:d.assignments.filter(r=>visible_(r,user,d.members)).map(r=>assignmentView_(r,allItems)),backlinks:allBacklinks.filter(r=>user.role==='admin'||user.team==='Backlink Team'&&r.memberId===user.memberId),activity:reports?activity:activity.slice(-30).reverse()};
 }
 function itemContext_(user,id){
   const d=dataTables_(),item=unique_(d.items,id,'Item ID'),assignment=unique_(d.assignments,item['Assignment ID'],'Assignment ID');
@@ -240,4 +242,67 @@ function checkSetup(){
   if((PropertiesService.getScriptProperties().getProperty('BRIDGE_SECRET')||'').length<32)failure_('Set BRIDGE_SECRET in Script Properties first');
   const book=workbook_();['Content_Verification','USP_Ranking_Assignments','USP_Ranking_Items','Team_Members','Activity_Log','Admin_Users'].forEach(name=>{if(!book.getSheetByName(name))failure_('Missing sheet: '+name);});
   privateRoot_();Sheets.Spreadsheets.get(SHEET_ID,{fields:'spreadsheetId'});console.log('Google backend configuration verified.');
+}
+
+const BACKLINK_PLATFORMS = {'MEM-GAURANSHI':['LinkedIn','X','Threads'],'MEM-ANUKRITI':['Diigo','Blogger','Tumblr']};
+function backlinkPlatforms_(memberId){return BACKLINK_PLATFORMS[memberId]||[];}
+function backlinkUrl_(value,required){
+  if(typeof value!=='string'||value.length>2048)failure_('Enter a valid web link');
+  const url=value.trim();if(!url&&!required)return '';
+  if(!/^https?:\/\/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?(?:[/?#][^\s]*)?$/i.test(url)||/[\u0000-\u0020<>"\\]/.test(url))failure_('Enter a complete http or https link');
+  return url;
+}
+function backlinkView_(row,submissions){
+  const memberId=key_(row['Member ID']),platforms=backlinkPlatforms_(memberId);
+  const items=platforms.map(platform=>{
+    const matches=submissions.filter(s=>key_(s['Assignment ID'])===key_(row['Assignment ID'])&&s.Platform===platform&&key_(s['Member ID'])===memberId);
+    if(matches.length>1)failure_('Duplicate backlink submissions must be corrected',409);
+    const s=matches[0]||{};
+    return {platform,submissionUrl:String(s['Submission URL']||''),remarks:String(s.Remarks||''),status:s['Submission URL']?'Done':'Pending'};
+  });
+  const completed=items.filter(s=>s.status==='Done').length,total=platforms.length;
+  return {id:key_(row['Assignment ID']),date:row.Date,project:row.Project||'GEDUCONNECT',sourceUrl:String(row['Source URL']||''),assignedTo:row['Assigned To'],memberId,version:Number(row.Version)||0,platforms,submissions:items,completed,total,progress:total?completed/total:0,status:total&&completed===total?'Completed':completed?'In Progress':'Pending',lastUpdated:row['Last Updated']||'',completedAt:row['Completed At']||''};
+}
+function backlinkTables_(){return {assignments:table_('Backlink_Assignments').rows.filter(r=>required_(r,['Assignment ID','Source URL','Member ID'])),submissions:table_('Backlink_Submissions').rows.filter(r=>required_(r,['Submission ID','Assignment ID','Member ID','Platform']))};}
+function appendRecord_(name,record){
+  const t=table_(name);return {appendCells:{sheetId:t.sheet.getSheetId(),rows:[{values:t.headers.map(h=>({userEnteredValue:typeof record[h]==='number'?{numberValue:record[h]}:{stringValue:String(record[h]??'')}}))}],fields:'userEnteredValue'}};
+}
+function backlinkOwner_(row,user){
+  if(user.role!=='admin'&&(user.team!=='Backlink Team'||key_(row['Member ID'])!==user.memberId))failure_('You cannot edit this backlink assignment',403);
+}
+function createBacklink_(user,p){
+  if(user.role!=='admin')failure_('Only administrators can assign backlinks',403);
+  operation_(p.operationId);
+  const member=unique_(table_('Team_Members').rows,p.memberId,'Member ID'),platforms=backlinkPlatforms_(p.memberId);
+  if(member.Team!=='Backlink Team'||member['Active Status']!=='Active'||platforms.length!==3)failure_('Select an active backlink member with configured platforms');
+  const sourceUrl=backlinkUrl_(p.sourceUrl,true);
+  if(!/^https?:\/\/(?:www\.)?geduconnect\.in(?:[/?#]|$)/i.test(sourceUrl))failure_('Enter a GEDUCONNECT source link');
+  const d=backlinkTables_(),previous=d.assignments.find(r=>r['Request ID']===p.operationId);
+  if(previous)return {assignment:backlinkView_(previous,d.submissions),duplicate:true};
+  if(d.assignments.some(r=>r['Member ID']===p.memberId&&String(r['Source URL']).replace(/\/$/,'')===sourceUrl.replace(/\/$/,'')))failure_('This link is already assigned to this member',409);
+  const now=new Date().toISOString(),id='BL-'+Utilities.getUuid(),record={'Assignment ID':id,Date:Utilities.formatDate(new Date(),'Asia/Kolkata','yyyy-MM-dd'),Project:'GEDUCONNECT','Source URL':sourceUrl,'Assigned To':member['Employee Name'],'Member ID':p.memberId,'Required Platforms':3,'Completed Platforms':0,'Progress Percentage':0,'Overall Status':'Pending','Last Updated':now,Version:1,'Completed At':'','Request ID':p.operationId};
+  const items=platforms.map((platform,i)=>({'Submission ID':id+'-'+(i+1),'Assignment ID':id,'Member ID':p.memberId,Platform:platform,'Submission URL':'',Remarks:'',Status:'Pending','Last Updated':now,Version:1,'Completed At':''}));
+  const actor={...user,memberId:p.memberId,name:user.name,team:'Backlink Team'};
+  Sheets.Spreadsheets.batchUpdate({requests:[appendRecord_('Backlink_Assignments',record),...items.map(s=>appendRecord_('Backlink_Submissions',s)),logRequest_(actor,sourceUrl,'Backlink assignment',{},record,'Assignment Created',id,'',p.operationId)]},SHEET_ID);
+  return {assignment:backlinkView_(record,items)};
+}
+function saveBacklink_(user,p){
+  const d=backlinkTables_(),row=unique_(d.assignments,p.assignmentId,'Assignment ID');
+  backlinkOwner_(row,user);operation_(p.operationId);
+  const actor={...user,memberId:row['Member ID'],team:'Backlink Team'};
+  if(seen_(actor,p.operationId,'',row['Assignment ID']))return {assignment:backlinkView_(row,d.submissions),duplicate:true};
+  version_(row,p.version);
+  if(!backlinkPlatforms_(row['Member ID']).includes(p.platform))failure_('This platform is not assigned to this member',403);
+  if(typeof p.remarks!=='string'||p.remarks.length>5000)failure_('Remarks must be under 5000 characters');
+  const submissionUrl=backlinkUrl_(p.submissionUrl,false);
+  if(submissionUrl&&submissionUrl.replace(/\/$/,'')===String(row['Source URL']).replace(/\/$/,''))failure_('Enter the published submission link, not the source link');
+  const matches=d.submissions.filter(s=>key_(s['Assignment ID'])===key_(row['Assignment ID'])&&s.Platform===p.platform&&s['Member ID']===row['Member ID']);
+  if(matches.length!==1)failure_('The platform submission row must be corrected',409);
+  const item=matches[0],now=new Date().toISOString(),changes={'Submission URL':submissionUrl,Remarks:p.remarks,Status:submissionUrl?'Done':'Pending','Last Updated':now,Version:(Number(item.Version)||0)+1,'Completed At':submissionUrl?(item['Completed At']||now):''};
+  const next={...item,...changes},before=backlinkView_(row,d.submissions),after=backlinkView_(row,d.submissions.map(s=>s===item?next:s));
+  const assignmentChanges={'Completed Platforms':after.completed,'Progress Percentage':after.progress,'Overall Status':after.status,'Last Updated':now,Version:(Number(row.Version)||0)+1,'Completed At':after.status==='Completed'?(row['Completed At']||now):''};
+  const requests=[rowRequest_('Backlink_Submissions',item,changes),rowRequest_('Backlink_Assignments',row,assignmentChanges),logRequest_(actor,row['Source URL'],p.platform,before,after,'Backlink Updated',row['Assignment ID'],'',p.operationId)];
+  if(before.status!==after.status)requests.push(logRequest_(actor,row['Source URL'],'Backlink assignment',{status:before.status},{status:after.status},after.status==='Completed'?'Assignment Completed':'Assignment Status Changed',row['Assignment ID'],'',p.operationId));
+  Sheets.Spreadsheets.batchUpdate({requests},SHEET_ID);
+  return {assignment:backlinkView_({...row,...assignmentChanges},d.submissions.map(s=>s===item?next:s))};
 }
