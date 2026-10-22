@@ -75,3 +75,22 @@ test('content status follows nonblank remarks and clearing remarks resets Pendin
  r=f.context.saveContent_(f.user,{assignmentId:'CONTENT-1',version:2,operationId:randomUUID(),pages:names.map(name=>({name,status:'Done',remarks:'  '}))});assert.equal(r.assignment.completed,0);assert(r.assignment.pages.every(p=>p.status==='Pending'));
 });
 
+
+test('exam reviews require all nine sections and save independent exam columns',()=>{
+ const f=fixture(),names=['Overview','Eligibility','Application Form','Admit Card','Exam Day Guidelines','Exam Pattern','Syllabus','Highlights','PYQs'];
+ const row={_row:2,'Assignment ID':'EXAM-2026-0001',Date:'2026-10-22','University Name':'JEE Main','Assigned To':'Sahil','Member ID':'MEM-SAHIL',Version:1,'Content Type':'Exam','Overview Remarks':'keep university field'};
+ f.tables.Content_Verification.headers=['Assignment ID','Date','University Name','Assigned To','Member ID','Version','Last Updated','Completed At','Content Type','Overview Remarks',...names.flatMap(n=>['Exam '+n+' Status','Exam '+n+' Remarks'])];
+ f.tables.Content_Verification.rows=[row];
+ const payload={assignmentId:row['Assignment ID'],version:1,operationId:randomUUID(),pages:names.map(name=>({name,status:'Pending',remarks:'Verified '+name}))};
+ assert.throws(()=>f.context.saveContent_(f.user,{...payload,pages:payload.pages.slice(0,6)}),/All 9 subpages/);
+ assert.throws(()=>f.context.saveContent_(f.user,{...payload,pages:payload.pages.map((p,i)=>i===8?{...p,name:'Overview'}:p)}),/All 9 subpages/);
+ assert.throws(()=>f.context.saveContent_(f.user,{...payload,pages:payload.pages.map((p,i)=>i===8?{...p,name:'Placement'}:p)}),/Invalid subpage/);
+ assert.throws(()=>f.context.saveContent_({...f.user,memberId:'OTHER'},payload),e=>e.status===403);
+ const r=f.context.saveContent_(f.user,payload);
+ assert.equal(r.assignment.contentType,'Exam');assert.equal(r.assignment.total,9);assert.equal(r.assignment.completed,9);assert.equal(r.assignment.progress,1);assert.equal(r.assignment.status,'Completed');
+ assert.equal(row['Exam PYQs Remarks'],'Verified PYQs');assert.equal(row['Overview Remarks'],'keep university field');
+ assert.equal(f.context.saveContent_(f.user,payload).duplicate,true);
+ assert.throws(()=>f.context.saveContent_(f.user,{...payload,operationId:randomUUID()}),e=>e.status===409);
+ const cleared=f.context.saveContent_(f.user,{...payload,version:2,operationId:randomUUID(),pages:payload.pages.map((p,i)=>({...p,remarks:i===8?'':p.remarks}))});
+ assert.equal(cleared.assignment.completed,8);assert.equal(cleared.assignment.status,'In Progress');assert.equal(row['Exam PYQs Status'],'Pending');
+});
