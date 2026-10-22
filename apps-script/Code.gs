@@ -4,6 +4,10 @@ const ROOT_FOLDER_ID = '1FJ1jHU-koTlzKdo9qKw7-lbU88uFzjJH';
 const MAX_BYTES = 2 * 1024 * 1024;
 let requestTables_ = {}, requestBook_ = null;
 const PAGES = ['Overview','Program & Fees','Admission','Placement','Student Support','FAQs'];
+const EXAM_PAGES = ['Overview','Eligibility','Application Form','Admit Card','Exam Day Guidelines','Exam Pattern','Syllabus','Highlights','PYQs'];
+function isExam_(row){return row['Content Type']==='Exam';}
+function contentPages_(row){return isExam_(row)?EXAM_PAGES:PAGES;}
+function contentColumn_(row,name,suffix){return (isExam_(row)?'Exam ':'')+name+' '+suffix;}
 function failure_(message,status){const error=new Error(message);error.status=status||400;throw error;}
 function json_(value){return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);}
 function doGet(){return json_({ok:false,error:'Authenticated POST required',status:405});}
@@ -49,7 +53,7 @@ function digest_(value){return Utilities.computeDigest(Utilities.DigestAlgorithm
 function workbook_(){return requestBook_ || (requestBook_=SpreadsheetApp.openById(SHEET_ID));}
 function primeTables_(names){
   const missing=names.filter(name=>!requestTables_[name]);if(!missing.length)return;
-  const result=Sheets.Spreadsheets.Values.batchGet(SHEET_ID,{ranges:missing.map(name=>"'"+name+"'!A:Z"),valueRenderOption:'UNFORMATTED_VALUE',dateTimeRenderOption:'SERIAL_NUMBER'});
+  const result=Sheets.Spreadsheets.Values.batchGet(SHEET_ID,{ranges:missing.map(name=>"'"+name+"'!A:"+(name==='Content_Verification'?'AR':'Z')),valueRenderOption:'UNFORMATTED_VALUE',dateTimeRenderOption:'SERIAL_NUMBER'});
   missing.forEach((name,i)=>{requestTables_[name]=tableValues_(name,result.valueRanges[i].values||[]);});
 }
 function tableValues_(name,values,sheet){
@@ -101,9 +105,9 @@ function session_(token){
 }
 function visible_(row,user,members){return user.role==='admin'||member_(row,members)===user.memberId;}
 function contentView_(r){
-  const pages=PAGES.map(name=>({name,status:r[name+' Status']==='Done'?'Done':'Pending',remarks:String(r[name+' Remarks']||'')}));
+  const pages=contentPages_(r).map(name=>({name,status:r[contentColumn_(r,name,'Status')]==='Done'?'Done':'Pending',remarks:String(r[contentColumn_(r,name,'Remarks')]||'')}));
   const completed=pages.filter(p=>p.status==='Done').length;
-  return {id:key_(r['Assignment ID']),date:r.Date,university:r['University Name'],liveLink:String(r['Live Link']||'').trim(),universityCheckLink:String(r['University Check Link']||'').trim(),assignedTo:r['Assigned To'],memberId:r['Member ID'],version:Number(r.Version)||0,completed,total:6,progress:completed/6,status:completed===6?'Completed':completed?'In Progress':'Pending',lastUpdated:r['Last Updated'],completedAt:r['Completed At'],pages};
+  return {id:key_(r['Assignment ID']),date:r.Date,university:r['University Name'],liveLink:String(r['Live Link']||'').trim(),universityCheckLink:String(r['University Check Link']||'').trim(),assignedTo:r['Assigned To'],memberId:r['Member ID'],version:Number(r.Version)||0,contentType:isExam_(r)?'Exam':'University',completed,total:pages.length,progress:completed/pages.length,status:completed===pages.length?'Completed':completed?'In Progress':'Pending',lastUpdated:r['Last Updated'],completedAt:r['Completed At'],pages};
 }
 function itemView_(r){return {id:key_(r['Item ID']),assignmentId:key_(r['Assignment ID']),university:r['University Name'],assignedTo:r['Assigned To'],type:r.Type,name:r['Item Name'],description:String(r.Description||''),status:r.Status==='Done'?'Done':'Pending',imageFileId:key_(r['Image File ID']),imageUrl:String(r['Image URL']||''),remarks:String(r.Remarks||''),version:Number(r.Version)||0,lastUpdated:r['Last Updated'],completedAt:r['Completed At'],folderId:key_(r['Item Folder ID'])};}
 function assignmentView_(r,items){
@@ -222,9 +226,10 @@ function saveItem_(user,p){
 function saveContent_(user,p){
   const d=dataTables_(),row=unique_(d.content,p.assignmentId,'Assignment ID');if(!visible_(row,user,d.members))failure_('You cannot edit this assignment',403);operation_(p.operationId);
   if(seen_(user,p.operationId,'',row['Assignment ID']))return {assignment:contentView_(row),duplicate:true};version_(row,p.version);
-  if(!Array.isArray(p.pages)||p.pages.length!==6||new Set(p.pages.map(p=>p.name)).size!==6)failure_('All six subpages are required');
+  const names=contentPages_(row);
+  if(!Array.isArray(p.pages)||p.pages.length!==names.length||new Set(p.pages.map(p=>p&&p.name)).size!==names.length)failure_('All '+names.length+' subpages are required');
   const changes={'Last Updated':new Date().toISOString(),'Version':(Number(row.Version)||0)+1,'Member ID':member_(row,d.members)};
-  p.pages.forEach(page=>{if(!PAGES.includes(page.name)||!['Pending','Done'].includes(page.status)||typeof page.remarks!=='string'||page.remarks.length>5000)failure_('Invalid subpage');changes[page.name+' Status']=page.remarks.trim()?'Done':'Pending';changes[page.name+' Remarks']=page.remarks;});
+  p.pages.forEach(page=>{if(!page||!names.includes(page.name)||!['Pending','Done'].includes(page.status)||typeof page.remarks!=='string'||page.remarks.length>5000)failure_('Invalid subpage');changes[contentColumn_(row,page.name,'Status')]=page.remarks.trim()?'Done':'Pending';changes[contentColumn_(row,page.name,'Remarks')]=page.remarks;});
   const before=contentView_(row),after=contentView_({...row,...changes});changes['Completed At']=after.status==='Completed'?(before.status==='Completed'?row['Completed At']||changes['Last Updated']:changes['Last Updated']):'';
   const requests=[rowRequest_('Content_Verification',row,changes),logRequest_(user,row['University Name'],'Content verification',before,after,'Content Updated',row['Assignment ID'],'',p.operationId)];
   if(before.status!==after.status)requests.push(logRequest_(user,row['University Name'],'University assignment',{status:before.status},{status:after.status},after.status==='Completed'?'Assignment Completed':'Assignment Status Changed',row['Assignment ID'],'',p.operationId));
