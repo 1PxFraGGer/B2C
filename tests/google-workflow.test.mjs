@@ -195,7 +195,14 @@ test('Classified Ads is rejected for Articles and Yash; Arhan News needs all fou
  assert.equal(updated.completed,3);assert.equal(updated.total,4);assert.equal(updated.status,'In Progress');updated=f.context.saveBacklink_(arhan,payload(news,'Classified Ads',4)).assignment;assert.equal(updated.status,'Completed');assert.equal(updated.completed,4);
  assert.equal(f.context.saveBacklink_(arhan,{...payload(news,'Classified Ads',5),submissionUrl:''}).assignment.status,'In Progress');
 });
-test('exam links reject missing slots, duplicate sources, invalid dates and unsafe URLs before writing',()=>{
- const f=backlinkFixture(),p=examBacklinkPayload();for(const invalid of [{...p,articles:p.articles.slice(1)},{...p,news:p.news.slice(1)},{...p,news:[p.articles[0],...p.news.slice(1)]},{...p,date:'2026-02-30'},{...p,articles:['javascript:alert(1)',...p.articles.slice(1)]}])assert.throws(()=>f.context.createBacklinkExam_(f.admin,invalid));assert.equal(f.tables.Backlink_Assignments.rows.length,0);
+test('exam links reject empty or oversized sections, duplicate sources, invalid dates and unsafe URLs before writing',()=>{
+ const f=backlinkFixture(),p=examBacklinkPayload();for(const invalid of [{...p,articles:[]},{...p,news:[]},{...p,articles:[...p.articles,'https://example.com/extra']},{...p,news:[...p.news,'https://example.com/extra']},{...p,news:[p.articles[0],...p.news.slice(1)]},{...p,date:'2026-02-30'},{...p,articles:['javascript:alert(1)',...p.articles.slice(1)]}])assert.throws(()=>f.context.createBacklinkExam_(f.admin,invalid));assert.equal(f.tables.Backlink_Assignments.rows.length,0);
  const failed=backlinkFixture({fail:true});assert.throws(()=>failed.context.createBacklinkExam_(failed.admin,p));assert.equal(failed.tables.Backlink_Assignments.rows.length,0);assert.equal(failed.tables.Backlink_Submissions.rows.length,0);
+});
+
+test('CLAT with five articles and three news links produces no empty slots or inflated totals',()=>{
+ const f=backlinkFixture(),p=examBacklinkPayload();p.exam='CLAT';p.articles=p.articles.slice(0,5);p.news=p.news.slice(0,3);
+ const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,16);assert.equal(f.tables.Backlink_Submissions.rows.length,51);
+ for(const [id,total] of [['MEM-YASH',24],['MEM-ARHAN',27]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.filter(r=>r.section==='Articles').length,5);assert.equal(rows.filter(r=>r.section==='News').length,3);assert.equal(rows.reduce((n,r)=>n+r.total,0),total);assert(rows.every(r=>r.sourceUrl));}
+ assert.equal(f.context.createBacklinkExam_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Submissions.rows.length,51);
 });
