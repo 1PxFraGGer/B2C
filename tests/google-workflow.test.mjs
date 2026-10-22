@@ -11,7 +11,7 @@ function fixture({replacement=false,fail=false,timeoutAfterCommit=false}={}){
   USP_Ranking_Assignments:{headers:['Assignment ID','Date','University Name','Assigned To','Member ID','Version','Last Updated','Completed At'],rows:[{_row:2,'Assignment ID':1,Date:'2026-10-14','University Name':'Test University','Assigned To':'Sahil','Member ID':'MEM-SAHIL',Version:1}]},
   USP_Ranking_Items:{headers:['Item ID','Assignment ID','University Name','Assigned To','Type','Item Name','Description','Status','Image File ID','Image URL','Image Preview','Remarks','Last Updated','Member ID','Version','Completed At','Item Folder ID'],rows:[{_row:2,'Item ID':'ITEM-001-NAAC','Assignment ID':1,'University Name':'Test University','Assigned To':'Sahil',Type:'USP','Item Name':'NAAC',Status:replacement?'Done':'Pending','Image File ID':replacement?'old-file':'','Image URL':replacement?'https://drive.google.com/file/d/old-file/view':'',Remarks:'original','Member ID':'MEM-SAHIL',Version:1,'Item Folder ID':replacement?'old-folder':''}]},
   Content_Verification:{headers:['Assignment ID'],rows:[]},
-  Backlink_Assignments:{headers:['Assignment ID','Date','Project','Source URL','Assigned To','Member ID','Required Platforms','Completed Platforms','Progress Percentage','Overall Status','Last Updated','Version','Completed At','Request ID','University Name','Page Name'],rows:[]},
+  Backlink_Assignments:{headers:['Assignment ID','Date','Project','Source URL','Assigned To','Member ID','Required Platforms','Completed Platforms','Progress Percentage','Overall Status','Last Updated','Version','Completed At','Request ID','University Name','Page Name','Assignment Type','Exam Name','Section','Link Number','Exam Group ID'],rows:[]},
   Backlink_Submissions:{headers:['Submission ID','Assignment ID','Member ID','Platform','Submission URL','Remarks','Status','Last Updated','Version','Completed At'],rows:[]},
   Activity_Log:{headers:['Timestamp','Employee','Team','University','Task','Previous Value','Updated Value','Action','Event ID','Assignment ID','Item ID','Member ID','Request ID'],rows:[]}
  };
@@ -99,7 +99,7 @@ test('exam reviews require all nine sections and save independent exam columns',
 
 function backlinkFixture(options){
  const f=fixture(options);
- for(const name of ['Gauranshi','Anukriti'])f.tables.Team_Members.rows.push({_row:f.tables.Team_Members.rows.length+2,'Member ID':'MEM-'+name.toUpperCase(),'Employee Name':name,Team:'Backlink Team','Active Status':'Active'});
+ for(const name of ['Gauranshi','Anukriti','Yash','Arhan'])f.tables.Team_Members.rows.push({_row:f.tables.Team_Members.rows.length+2,'Member ID':'MEM-'+name.toUpperCase(),'Employee Name':name,Team:'Backlink Team','Active Status':'Active'});
  f.admin={id:'ADMIN',role:'admin',name:'Admin'};
  f.gauranshi={id:'MEM-GAURANSHI',memberId:'MEM-GAURANSHI',name:'Gauranshi',role:'employee',team:'Backlink Team'};
  f.anukriti={id:'MEM-ANUKRITI',memberId:'MEM-ANUKRITI',name:'Anukriti',role:'employee',team:'Backlink Team'};
@@ -172,4 +172,30 @@ test('daily allocation permits two universities and rejects a third without part
 test('university creation fails as one batch and .com sources retain the original platform save protections',()=>{
  const f=backlinkFixture({fail:true});assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{university:'VGU Online',sourceUrl:'https://geduconnect.com/university/vgu-online',date:'2026-10-22',operationId:randomUUID()}));assert.equal(f.tables.Backlink_Assignments.rows.length,0);assert.equal(f.tables.Backlink_Submissions.rows.length,0);
  const ok=backlinkFixture(),r=ok.create('MEM-GAURANSHI','https://geduconnect.com/university/vgu-online');assert.equal(r.total,3);assert.equal(r.sourceUrl,'https://geduconnect.com/university/vgu-online');
+});
+
+function examBacklinkPayload(){return {exam:'JEE Main',date:'2026-10-22',articles:Array.from({length:6},(_,i)=>'https://example.com/article/'+(i+1)),news:Array.from({length:4},(_,i)=>'https://example.com/news/'+(i+1)),operationId:randomUUID()};}
+test('exam assignment creates 6 Articles and 4 News for each member with 30 and 34 submissions',()=>{
+ const f=backlinkFixture(),p=examBacklinkPayload();assert.throws(()=>f.context.createBacklinkExam_(f.gauranshi,p),e=>e.status===403);
+ const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,20);assert.equal(f.tables.Backlink_Submissions.rows.length,64);
+ for(const [id,count] of [['MEM-YASH',30],['MEM-ARHAN',34]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.length,10);assert.equal(rows.filter(r=>r.section==='Articles').length,6);assert.equal(rows.filter(r=>r.section==='News').length,4);assert.equal(rows.reduce((n,r)=>n+r.total,0),count);assert(rows.every(r=>r.assignmentType==='Exam'&&r.exam==='JEE Main'));}
+ assert.equal(new Set(r.assignments.map(r=>r.examGroupId)).size,1);
+ assert(r.assignments.filter(r=>r.memberId==='MEM-YASH').every(r=>!r.platforms.includes('Classified Ads')));
+ assert(r.assignments.filter(r=>r.memberId==='MEM-ARHAN'&&r.section==='Articles').every(r=>!r.platforms.includes('Classified Ads')));
+ assert(r.assignments.filter(r=>r.memberId==='MEM-ARHAN'&&r.section==='News').every(r=>r.platforms.includes('Classified Ads')));
+ assert.equal(f.context.createBacklinkExam_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Assignments.rows.length,20);
+ assert.throws(()=>f.context.createBacklinkExam_(f.admin,{...p,operationId:randomUUID()}),e=>e.status===409);
+});
+test('Classified Ads is rejected for Articles and Yash; Arhan News needs all four submissions',()=>{
+ const f=backlinkFixture(),r=f.context.createBacklinkExam_(f.admin,examBacklinkPayload()),arhan={memberId:'MEM-ARHAN',role:'employee',team:'Backlink Team',name:'Arhan'},yash={...arhan,memberId:'MEM-YASH',name:'Yash'};
+ const article=r.assignments.find(r=>r.memberId===arhan.memberId&&r.section==='Articles'),news=r.assignments.find(r=>r.memberId===arhan.memberId&&r.section==='News'),yashNews=r.assignments.find(r=>r.memberId===yash.memberId&&r.section==='News');
+ const payload=(row,platform,version=1)=>({assignmentId:row.id,platform,version,submissionUrl:'https://published.example/'+platform.replaceAll(' ','-'),remarks:'',operationId:randomUUID()});
+ assert.throws(()=>f.context.saveBacklink_(arhan,payload(article,'Classified Ads')),e=>e.status===403);assert.throws(()=>f.context.saveBacklink_(yash,payload(yashNews,'Classified Ads')),e=>e.status===403);assert.throws(()=>f.context.saveBacklink_(yash,payload(news,'Blogger')),e=>e.status===403);
+ let updated;for(const [i,platform] of ['Tumblr','Blogger','Diigo'].entries())updated=f.context.saveBacklink_(arhan,payload(news,platform,i+1)).assignment;
+ assert.equal(updated.completed,3);assert.equal(updated.total,4);assert.equal(updated.status,'In Progress');updated=f.context.saveBacklink_(arhan,payload(news,'Classified Ads',4)).assignment;assert.equal(updated.status,'Completed');assert.equal(updated.completed,4);
+ assert.equal(f.context.saveBacklink_(arhan,{...payload(news,'Classified Ads',5),submissionUrl:''}).assignment.status,'In Progress');
+});
+test('exam links reject missing slots, duplicate sources, invalid dates and unsafe URLs before writing',()=>{
+ const f=backlinkFixture(),p=examBacklinkPayload();for(const invalid of [{...p,articles:p.articles.slice(1)},{...p,news:p.news.slice(1)},{...p,news:[p.articles[0],...p.news.slice(1)]},{...p,date:'2026-02-30'},{...p,articles:['javascript:alert(1)',...p.articles.slice(1)]}])assert.throws(()=>f.context.createBacklinkExam_(f.admin,invalid));assert.equal(f.tables.Backlink_Assignments.rows.length,0);
+ const failed=backlinkFixture({fail:true});assert.throws(()=>failed.context.createBacklinkExam_(failed.admin,p));assert.equal(failed.tables.Backlink_Assignments.rows.length,0);assert.equal(failed.tables.Backlink_Submissions.rows.length,0);
 });
