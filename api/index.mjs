@@ -1,7 +1,7 @@
 import {google,ApiError} from '../server/google.mjs';
 import {login,requireSession,cookie,csrf,assertCsrf,assertOrigin,sessionToken} from '../server/auth.mjs';
 import {validateImage} from '../server/files.mjs';
-const writeActions=new Set(['saveItem','saveContent']);
+const writeActions=new Set(['saveItem','saveContent','createBacklink','saveBacklink']);
 export default async function handler(req,res) {
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
   const action=req.query?.action;
