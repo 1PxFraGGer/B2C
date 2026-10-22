@@ -11,7 +11,7 @@ function fixture({replacement=false,fail=false,timeoutAfterCommit=false}={}){
   USP_Ranking_Assignments:{headers:['Assignment ID','Date','University Name','Assigned To','Member ID','Version','Last Updated','Completed At'],rows:[{_row:2,'Assignment ID':1,Date:'2026-10-14','University Name':'Test University','Assigned To':'Sahil','Member ID':'MEM-SAHIL',Version:1}]},
   USP_Ranking_Items:{headers:['Item ID','Assignment ID','University Name','Assigned To','Type','Item Name','Description','Status','Image File ID','Image URL','Image Preview','Remarks','Last Updated','Member ID','Version','Completed At','Item Folder ID'],rows:[{_row:2,'Item ID':'ITEM-001-NAAC','Assignment ID':1,'University Name':'Test University','Assigned To':'Sahil',Type:'USP','Item Name':'NAAC',Status:replacement?'Done':'Pending','Image File ID':replacement?'old-file':'','Image URL':replacement?'https://drive.google.com/file/d/old-file/view':'',Remarks:'original','Member ID':'MEM-SAHIL',Version:1,'Item Folder ID':replacement?'old-folder':''}]},
   Content_Verification:{headers:['Assignment ID'],rows:[]},
-  Backlink_Assignments:{headers:['Assignment ID','Date','Project','Source URL','Assigned To','Member ID','Required Platforms','Completed Platforms','Progress Percentage','Overall Status','Last Updated','Version','Completed At','Request ID'],rows:[]},
+  Backlink_Assignments:{headers:['Assignment ID','Date','Project','Source URL','Assigned To','Member ID','Required Platforms','Completed Platforms','Progress Percentage','Overall Status','Last Updated','Version','Completed At','Request ID','University Name','Page Name'],rows:[]},
   Backlink_Submissions:{headers:['Submission ID','Assignment ID','Member ID','Platform','Submission URL','Remarks','Status','Last Updated','Version','Completed At'],rows:[]},
   Activity_Log:{headers:['Timestamp','Employee','Team','University','Task','Previous Value','Updated Value','Action','Event ID','Assignment ID','Item ID','Member ID','Request ID'],rows:[]}
  };
@@ -149,4 +149,27 @@ test('three distinct platform submissions complete a source and clearing one reo
 });
 test('failed backlink writes leave the source and all submissions unchanged',()=>{
  const f=backlinkFixture({fail:true});assert.throws(()=>f.create());assert.equal(f.tables.Backlink_Assignments.rows.length,0);assert.equal(f.tables.Backlink_Submissions.rows.length,0);
+});
+
+test('a university creates all six exact .com links for both members atomically',()=>{
+ const f=backlinkFixture(),p={university:'VGU Online',sourceUrl:'https://geduconnect.com/university/vgu-online',date:'2026-10-22',operationId:randomUUID()};
+ assert.throws(()=>f.context.createBacklinkUniversity_(f.gauranshi,p),e=>e.status===403);
+ const result=f.context.createBacklinkUniversity_(f.admin,p);assert.equal(result.assignments.length,12);assert.equal(f.tables.Backlink_Submissions.rows.length,36);
+ const suffixes=['','/program-fees','/admission-process','/placement-career-support','/student-support','/faqs'];
+ for(const id of ['MEM-GAURANSHI','MEM-ANUKRITI']){const rows=result.assignments.filter(r=>r.memberId===id);assert.deepEqual(Array.from(rows,r=>r.sourceUrl),suffixes.map(s=>p.sourceUrl+s));assert(rows.every(r=>r.university==='VGU Online'&&r.date===p.date));assert.equal(new Set(rows.map(r=>r.page)).size,6);}
+ assert.equal(f.context.createBacklinkUniversity_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Assignments.rows.length,12);
+ assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{...p,operationId:randomUUID()}),e=>e.status===409);
+ assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{...p,sourceUrl:'https://geduconnect.com.evil.example/university/vgu-online',operationId:randomUUID()}));
+ assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{...p,sourceUrl:p.sourceUrl+'/faqs',operationId:randomUUID()}));
+ assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{...p,date:'2026-02-30',operationId:randomUUID()}));
+});
+test('daily allocation permits two universities and rejects a third without partial rows',()=>{
+ const f=backlinkFixture();for(const slug of ['one','two'])f.context.createBacklinkUniversity_(f.admin,{university:slug,sourceUrl:'https://geduconnect.com/university/'+slug,date:'2026-10-22',operationId:randomUUID()});
+ assert.equal(f.tables.Backlink_Assignments.rows.length,24);assert.equal(f.tables.Backlink_Submissions.rows.length,72);
+ assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{university:'three',sourceUrl:'https://geduconnect.com/university/three',date:'2026-10-22',operationId:randomUUID()}),/Two universities/);assert.equal(f.tables.Backlink_Assignments.rows.length,24);
+ f.context.createBacklinkUniversity_(f.admin,{university:'three',sourceUrl:'https://geduconnect.com/university/three',date:'2026-10-23',operationId:randomUUID()});assert.equal(f.tables.Backlink_Assignments.rows.length,36);
+});
+test('university creation fails as one batch and .com sources retain the original platform save protections',()=>{
+ const f=backlinkFixture({fail:true});assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{university:'VGU Online',sourceUrl:'https://geduconnect.com/university/vgu-online',date:'2026-10-22',operationId:randomUUID()}));assert.equal(f.tables.Backlink_Assignments.rows.length,0);assert.equal(f.tables.Backlink_Submissions.rows.length,0);
+ const ok=backlinkFixture(),r=ok.create('MEM-GAURANSHI','https://geduconnect.com/university/vgu-online');assert.equal(r.total,3);assert.equal(r.sourceUrl,'https://geduconnect.com/university/vgu-online');
 });
