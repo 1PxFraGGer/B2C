@@ -30,7 +30,7 @@ function doPost(e){
     // Reserve the nonce atomically, then allow independent reads and previews concurrently.
     if(['sessionRead','data','reports','image'].includes(action)){lock.releaseLock();lock=null;}
     const names=['Team_Members','Admin_Users'];
-    if(['data','reports','saveItem','saveContent','createBacklink','saveBacklink','createBacklinkUniversity'].includes(action))names.push('Content_Verification','USP_Ranking_Assignments','USP_Ranking_Items','Activity_Log','Backlink_Assignments','Backlink_Submissions');
+    if(['data','reports','saveItem','saveContent','createBacklink','saveBacklink','createBacklinkUniversity','createBacklinkExam'].includes(action))names.push('Content_Verification','USP_Ranking_Assignments','USP_Ranking_Items','Activity_Log','Backlink_Assignments','Backlink_Submissions');
     else if(action==='image')names.push('USP_Ranking_Assignments','USP_Ranking_Items');
     if(action!=='loginRate')primeTables_(names);
     if(action==='loginRate')return json_({ok:true,data:rate_(p.loginId)});
@@ -44,6 +44,7 @@ function doPost(e){
     else if(action==='saveContent')data=saveContent_(user,p);
     else if(action==='createBacklink')data=createBacklink_(user,p);
     else if(action==='createBacklinkUniversity')data=createBacklinkUniversity_(user,p);
+    else if(action==='createBacklinkExam')data=createBacklinkExam_(user,p);
     else if(action==='saveBacklink')data=saveBacklink_(user,p);
     else if(action==='image')data=image_(user,p.itemId);
     else failure_('Unknown action',404);
@@ -245,8 +246,8 @@ function checkSetup(){
   privateRoot_();Sheets.Spreadsheets.get(SHEET_ID,{fields:'spreadsheetId'});console.log('Google backend configuration verified.');
 }
 
-const BACKLINK_PLATFORMS = {'MEM-GAURANSHI':['LinkedIn','X','Threads'],'MEM-ANUKRITI':['Diigo','Blogger','Tumblr']};
-function backlinkPlatforms_(memberId){return BACKLINK_PLATFORMS[memberId]||[];}
+const BACKLINK_PLATFORMS = {'MEM-GAURANSHI':['LinkedIn','X','Threads'],'MEM-ANUKRITI':['Diigo','Blogger','Tumblr'],'MEM-YASH':['LinkedIn','X','Threads'],'MEM-ARHAN':['Tumblr','Blogger','Diigo']};
+function backlinkPlatforms_(memberId,row){const platforms=BACKLINK_PLATFORMS[memberId]||[];return memberId==='MEM-ARHAN'&&row&&row['Assignment Type']==='Exam'&&row.Section==='News'?[...platforms,'Classified Ads']:platforms;}
 function backlinkUrl_(value,required){
   if(typeof value!=='string'||value.length>2048)failure_('Enter a valid web link');
   const url=value.trim();if(!url&&!required)return '';
@@ -254,7 +255,7 @@ function backlinkUrl_(value,required){
   return url;
 }
 function backlinkView_(row,submissions){
-  const memberId=key_(row['Member ID']),platforms=backlinkPlatforms_(memberId);
+  const memberId=key_(row['Member ID']),platforms=backlinkPlatforms_(memberId,row);
   const items=platforms.map(platform=>{
     const matches=submissions.filter(s=>key_(s['Assignment ID'])===key_(row['Assignment ID'])&&s.Platform===platform&&key_(s['Member ID'])===memberId);
     if(matches.length>1)failure_('Duplicate backlink submissions must be corrected',409);
@@ -262,7 +263,7 @@ function backlinkView_(row,submissions){
     return {platform,submissionUrl:String(s['Submission URL']||''),remarks:String(s.Remarks||''),status:s['Submission URL']?'Done':'Pending'};
   });
   const completed=items.filter(s=>s.status==='Done').length,total=platforms.length;
-  return {id:key_(row['Assignment ID']),date:row.Date,project:row.Project||'GEDUCONNECT',sourceUrl:String(row['Source URL']||''),university:row['University Name']||'',page:row['Page Name']||'',assignedTo:row['Assigned To'],memberId,version:Number(row.Version)||0,platforms,submissions:items,completed,total,progress:total?completed/total:0,status:total&&completed===total?'Completed':completed?'In Progress':'Pending',lastUpdated:row['Last Updated']||'',completedAt:row['Completed At']||''};
+  return {id:key_(row['Assignment ID']),date:row.Date,project:row.Project||'GEDUCONNECT',sourceUrl:String(row['Source URL']||''),university:row['University Name']||'',page:row['Page Name']||'',assignmentType:row['Assignment Type']||'University',exam:row['Exam Name']||'',section:row.Section||'',linkNumber:Number(row['Link Number'])||0,examGroupId:row['Exam Group ID']||'',assignedTo:row['Assigned To'],memberId,version:Number(row.Version)||0,platforms,submissions:items,completed,total,progress:total?completed/total:0,status:total&&completed===total?'Completed':completed?'In Progress':'Pending',lastUpdated:row['Last Updated']||'',completedAt:row['Completed At']||''};
 }
 function backlinkTables_(){return {assignments:table_('Backlink_Assignments').rows.filter(r=>required_(r,['Assignment ID','Source URL','Member ID'])),submissions:table_('Backlink_Submissions').rows.filter(r=>required_(r,['Submission ID','Assignment ID','Member ID','Platform']))};}
 function appendRecord_(name,record){
@@ -275,7 +276,7 @@ function createBacklink_(user,p){
   if(user.role!=='admin')failure_('Only administrators can assign backlinks',403);
   operation_(p.operationId);
   const member=unique_(table_('Team_Members').rows,p.memberId,'Member ID'),platforms=backlinkPlatforms_(p.memberId);
-  if(member.Team!=='Backlink Team'||member['Active Status']!=='Active'||platforms.length!==3)failure_('Select an active backlink member with configured platforms');
+  if(!['MEM-GAURANSHI','MEM-ANUKRITI'].includes(p.memberId)||member.Team!=='Backlink Team'||member['Active Status']!=='Active'||platforms.length!==3)failure_('Select an active backlink member with configured platforms');
   const sourceUrl=backlinkUrl_(p.sourceUrl,true);
   if(!/^https?:\/\/(?:www\.)?geduconnect\.(?:com|in)(?:[/?#]|$)/i.test(sourceUrl))failure_('Enter a GEDUCONNECT source link');
   const d=backlinkTables_(),previous=d.assignments.find(r=>r['Request ID']===p.operationId);
@@ -293,7 +294,7 @@ function saveBacklink_(user,p){
   const actor={...user,memberId:row['Member ID'],team:'Backlink Team'};
   if(seen_(actor,p.operationId,'',row['Assignment ID']))return {assignment:backlinkView_(row,d.submissions),duplicate:true};
   version_(row,p.version);
-  if(!backlinkPlatforms_(row['Member ID']).includes(p.platform))failure_('This platform is not assigned to this member',403);
+  if(!backlinkPlatforms_(row['Member ID'],row).includes(p.platform))failure_('This platform is not assigned to this member',403);
   if(typeof p.remarks!=='string'||p.remarks.length>5000)failure_('Remarks must be under 5000 characters');
   const submissionUrl=backlinkUrl_(p.submissionUrl,false);
   if(submissionUrl&&submissionUrl.replace(/\/$/,'')===String(row['Source URL']).replace(/\/$/,''))failure_('Enter the published submission link, not the source link');
@@ -338,6 +339,34 @@ function createBacklinkUniversity_(user,p){
     backlinkPlatforms_(m['Member ID']).forEach((platform,i)=>{const s={'Submission ID':id+'-'+(i+1),'Assignment ID':id,'Member ID':m['Member ID'],Platform:platform,'Submission URL':'',Remarks:'',Status:'Pending','Last Updated':now,Version:1,'Completed At':''};items.push(s);requests.push(appendRecord_('Backlink_Submissions',s));});
     requests.push(logRequest_({...user,memberId:m['Member ID'],team:'Backlink Team'},p.university.trim(),page[0],{},record,'Assignment Created',id,'',p.operationId));
   }
+  Sheets.Spreadsheets.batchUpdate({requests},SHEET_ID);
+  return {assignments:records.map(r=>backlinkView_(r,items))};
+}
+
+function createBacklinkExam_(user,p){
+  if(user.role!=='admin')failure_('Only administrators can assign exams',403);
+  operation_(p.operationId);
+  if(typeof p.exam!=='string'||!p.exam.trim()||p.exam.length>200)failure_('Enter an exam name');
+  if(typeof p.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(p.date)||isNaN(new Date(p.date+'T00:00:00Z').getTime())||new Date(p.date+'T00:00:00Z').toISOString().slice(0,10)!==p.date)failure_('Enter a valid assignment date');
+  if(!Array.isArray(p.articles)||p.articles.length!==6||!Array.isArray(p.news)||p.news.length!==4)failure_('Provide exactly 6 article links and 4 news links');
+  const sections=[['Articles',p.articles.map(v=>backlinkUrl_(v,true))],['News',p.news.map(v=>backlinkUrl_(v,true))]];
+  const sources=sections.flatMap(s=>s[1]);if(new Set(sources.map(v=>v.replace(/\/$/,''))).size!==10)failure_('All 10 source links must be different');
+  const d=backlinkTables_(),previous=d.assignments.filter(r=>r['Request ID']===p.operationId);
+  if(previous.length)return {assignments:previous.map(r=>backlinkView_(r,d.submissions)),duplicate:true};
+  const members=['MEM-YASH','MEM-ARHAN'].map(id=>unique_(table_('Team_Members').rows,id,'Member ID'));
+  for(const m of members){
+    if(m.Team!=='Backlink Team'||m['Active Status']!=='Active')failure_('Yash and Arhan must both be active backlink members');
+    const own=d.assignments.filter(r=>r['Member ID']===m['Member ID']);
+    if(own.some(r=>r['Assignment Type']==='Exam'&&String(r['Exam Name']).trim().toLowerCase()===p.exam.trim().toLowerCase()&&String(r.Date).slice(0,10)===p.date))failure_('This exam is already assigned to '+m['Employee Name']+' for this date',409);
+    if(own.some(r=>sources.map(v=>v.replace(/\/$/,'')).includes(String(r['Source URL']).replace(/\/$/,''))))failure_('A source link is already assigned to '+m['Employee Name'],409);
+  }
+  const now=new Date().toISOString(),groupId='EXBL-'+Utilities.getUuid(),records=[],items=[],requests=[];
+  for(const m of members)for(const section of sections)section[1].forEach((sourceUrl,i)=>{
+    const id='BL-'+Utilities.getUuid(),record={'Assignment ID':id,Date:p.date,Project:'Exam Backlinks','Source URL':sourceUrl,'Assigned To':m['Employee Name'],'Member ID':m['Member ID'],'Completed Platforms':0,'Progress Percentage':0,'Overall Status':'Pending','Last Updated':now,Version:1,'Completed At':'','Request ID':p.operationId,'University Name':'','Page Name':section[0]+' '+(i+1),'Assignment Type':'Exam','Exam Name':p.exam.trim(),Section:section[0],'Link Number':i+1,'Exam Group ID':groupId};
+    const platforms=backlinkPlatforms_(m['Member ID'],record);record['Required Platforms']=platforms.length;records.push(record);requests.push(appendRecord_('Backlink_Assignments',record));
+    platforms.forEach((platform,j)=>{const s={'Submission ID':id+'-'+(j+1),'Assignment ID':id,'Member ID':m['Member ID'],Platform:platform,'Submission URL':'',Remarks:'',Status:'Pending','Last Updated':now,Version:1,'Completed At':''};items.push(s);requests.push(appendRecord_('Backlink_Submissions',s));});
+    requests.push(logRequest_({...user,memberId:m['Member ID'],team:'Backlink Team'},p.exam.trim(),record['Page Name'],{},record,'Assignment Created',id,'',p.operationId));
+  });
   Sheets.Spreadsheets.batchUpdate({requests},SHEET_ID);
   return {assignments:records.map(r=>backlinkView_(r,items))};
 }
