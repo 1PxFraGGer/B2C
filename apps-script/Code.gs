@@ -348,9 +348,9 @@ function createBacklinkExam_(user,p){
   operation_(p.operationId);
   if(typeof p.exam!=='string'||!p.exam.trim()||p.exam.length>200)failure_('Enter an exam name');
   if(typeof p.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(p.date)||isNaN(new Date(p.date+'T00:00:00Z').getTime())||new Date(p.date+'T00:00:00Z').toISOString().slice(0,10)!==p.date)failure_('Enter a valid assignment date');
-  if(!Array.isArray(p.articles)||p.articles.length!==6||!Array.isArray(p.news)||p.news.length!==4)failure_('Provide exactly 6 article links and 4 news links');
+  if(!Array.isArray(p.articles)||p.articles.length<1||p.articles.length>6||!Array.isArray(p.news)||p.news.length<1||p.news.length>4)failure_('Provide 1–6 article links and 1–4 news links');
   const sections=[['Articles',p.articles.map(v=>backlinkUrl_(v,true))],['News',p.news.map(v=>backlinkUrl_(v,true))]];
-  const sources=sections.flatMap(s=>s[1]);if(new Set(sources.map(v=>v.replace(/\/$/,''))).size!==10)failure_('All 10 source links must be different');
+  const sources=sections.flatMap(s=>s[1]);if(new Set(sources.map(v=>v.replace(/\/$/,''))).size!==sources.length)failure_('All source links must be different');
   const d=backlinkTables_(),previous=d.assignments.filter(r=>r['Request ID']===p.operationId);
   if(previous.length)return {assignments:previous.map(r=>backlinkView_(r,d.submissions)),duplicate:true};
   const members=['MEM-YASH','MEM-ARHAN'].map(id=>unique_(table_('Team_Members').rows,id,'Member ID'));
