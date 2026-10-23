@@ -206,3 +206,28 @@ test('CLAT with five articles and three news links produces no empty slots or in
  for(const [id,total] of [['MEM-YASH',24],['MEM-ARHAN',27]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.filter(r=>r.section==='Articles').length,5);assert.equal(rows.filter(r=>r.section==='News').length,3);assert.equal(rows.reduce((n,r)=>n+r.total,0),total);assert(rows.every(r=>r.sourceUrl));}
  assert.equal(f.context.createBacklinkExam_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Submissions.rows.length,51);
 });
+
+function customUniversityPages(){return [['Overview','https://geduconnect.com/university/custom-main'],['Program & Fees','https://geduconnect.com/custom-fees'],['Admission process','https://geduconnect.com/admissions/custom'],['Placement & Career Support','https://geduconnect.com/career-services'],['Student Support','https://geduconnect.com/help/custom'],['FAQs','https://geduconnect.com/questions-custom']].map(([name,url])=>({name,url}));}
+test('custom university source links are saved exactly and daily counting uses university identity',()=>{
+ const f=backlinkFixture(),p={university:'Custom University',date:'2026-10-23',pages:customUniversityPages(),operationId:randomUUID()};
+ const r=f.context.createBacklinkUniversity_(f.admin,p);assert.equal(r.assignments.length,12);for(const id of ['MEM-GAURANSHI','MEM-ANUKRITI'])assert.deepEqual(Array.from(r.assignments.filter(r=>r.memberId===id),r=>r.sourceUrl),p.pages.map(p=>p.url));
+ f.context.createBacklinkUniversity_(f.admin,{university:'Second',date:p.date,sourceUrl:'https://geduconnect.com/university/second',operationId:randomUUID()});
+ assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{university:'Third',date:p.date,sourceUrl:'https://geduconnect.com/university/third',operationId:randomUUID()}),/Two universities/);
+});
+test('admin link corrections update both members, retain submissions, and reject stale or unauthorized edits',()=>{
+ const f=backlinkFixture(),created=f.context.createBacklinkUniversity_(f.admin,{university:'VGU Online',date:'2026-10-23',sourceUrl:'https://geduconnect.com/university/vgu-online',operationId:randomUUID()}).assignments;
+ const a=created[0];f.context.saveBacklink_(f.gauranshi,{assignmentId:a.id,platform:'LinkedIn',version:1,submissionUrl:'https://linkedin.com/posts/existing',remarks:'Keep this',operationId:randomUUID()});
+ const p={assignmentId:a.id,pages:customUniversityPages(),versions:f.tables.Backlink_Assignments.rows.map(r=>({id:r['Assignment ID'],version:r.Version})),operationId:randomUUID()};
+ assert.throws(()=>f.context.saveUniversitySourceLinks_(f.gauranshi,p),e=>e.status===403);
+ assert.throws(()=>f.context.saveUniversitySourceLinks_(f.admin,{...p,versions:p.versions.map(v=>({...v,version:0}))}),e=>e.status===409);
+ assert.equal(f.context.saveUniversitySourceLinks_(f.admin,p).updated,12);assert(f.tables.Backlink_Submissions.rows.some(r=>r['Submission URL']==='https://linkedin.com/posts/existing'&&r.Remarks==='Keep this'));
+ for(const id of ['MEM-GAURANSHI','MEM-ANUKRITI'])assert.deepEqual(f.tables.Backlink_Assignments.rows.filter(r=>r['Member ID']===id).map(r=>r['Source URL']),p.pages.map(p=>p.url));
+ assert.equal(f.context.saveUniversitySourceLinks_(f.admin,p).duplicate,true);
+ assert.throws(()=>f.context.saveUniversitySourceLinks_(f.admin,{...p,operationId:randomUUID()}),e=>e.status===409);
+});
+test('source link corrections reject duplicate, incomplete and non-GEDUCONNECT URLs before writing',()=>{
+ const f=backlinkFixture(),created=f.context.createBacklinkUniversity_(f.admin,{university:'VGU Online',date:'2026-10-23',sourceUrl:'https://geduconnect.com/university/vgu-online',operationId:randomUUID()}).assignments;
+ const p={assignmentId:created[0].id,versions:created.map(r=>({id:r.id,version:r.version})),pages:customUniversityPages(),operationId:randomUUID()};
+ for(const pages of [p.pages.slice(1),p.pages.map((r,i)=>i===1?{...r,url:p.pages[0].url}:r),p.pages.map((r,i)=>i===1?{...r,url:'https://geduconnect.com.evil.example/test'}:r)])assert.throws(()=>f.context.saveUniversitySourceLinks_(f.admin,{...p,pages}));
+ assert.equal(f.tables.Backlink_Assignments.rows[0]['Source URL'],'https://geduconnect.com/university/vgu-online');
+});
