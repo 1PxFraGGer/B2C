@@ -30,7 +30,7 @@ function doPost(e){
     // Reserve the nonce atomically, then allow independent reads and previews concurrently.
     if(['sessionRead','data','reports','image'].includes(action)){lock.releaseLock();lock=null;}
     const names=['Team_Members','Admin_Users'];
-    if(['data','reports','saveItem','saveContent','createBacklink','saveBacklink','createBacklinkUniversity','createBacklinkExam','saveUniversitySourceLinks'].includes(action))names.push('Content_Verification','USP_Ranking_Assignments','USP_Ranking_Items','Activity_Log','Backlink_Assignments','Backlink_Submissions');
+    if(['data','reports','saveItem','saveContent','createBacklink','saveBacklink','createBacklinkUniversity','createBacklinkExam','saveUniversitySourceLinks','saveExamSourceLinks'].includes(action))names.push('Content_Verification','USP_Ranking_Assignments','USP_Ranking_Items','Activity_Log','Backlink_Assignments','Backlink_Submissions');
     else if(action==='image')names.push('USP_Ranking_Assignments','USP_Ranking_Items');
     if(action!=='loginRate')primeTables_(names);
     if(action==='loginRate')return json_({ok:true,data:rate_(p.loginId)});
@@ -44,6 +44,7 @@ function doPost(e){
     else if(action==='saveContent')data=saveContent_(user,p);
     else if(action==='createBacklink')data=createBacklink_(user,p);
     else if(action==='createBacklinkUniversity')data=createBacklinkUniversity_(user,p);
+    else if(action==='saveExamSourceLinks')data=saveExamSourceLinks_(user,p);
     else if(action==='saveUniversitySourceLinks')data=saveUniversitySourceLinks_(user,p);
     else if(action==='createBacklinkExam')data=createBacklinkExam_(user,p);
     else if(action==='saveBacklink')data=saveBacklink_(user,p);
@@ -378,6 +379,30 @@ function universitySourcePages_(pages){
   if(new Set(result.map(p=>p.url.replace(/\/$/,''))).size!==6)failure_('Each university page needs a different source link');
   return result;
 }
+function saveExamSourceLinks_(user,p){
+  if(user.role!=='admin')failure_('Only administrators can edit source links',403);
+  operation_(p.operationId);
+  const d=backlinkTables_(),anchor=unique_(d.assignments,p.assignmentId,'Assignment ID');
+  if(anchor['Assignment Type']!=='Exam'||!anchor['Exam Group ID'])failure_('Select an exam backlink assignment');
+  const actor={...user,memberId:anchor['Member ID'],team:'Backlink Team'};
+  if(seen_(actor,p.operationId,'',anchor['Assignment ID']))return {duplicate:true};
+  const group=d.assignments.filter(r=>r['Assignment Type']==='Exam'&&r['Exam Group ID']===anchor['Exam Group ID']);
+  const slot=r=>r.Section+'|'+Number(r['Link Number']),slots=[...new Set(group.map(slot))];
+  if(!Array.isArray(p.links)||p.links.length!==slots.length||p.links.some(l=>!l||!['Articles','News'].includes(l.section)||!Number.isInteger(l.linkNumber)||l.linkNumber<1)||new Set(p.links.map(l=>l.section+'|'+l.linkNumber)).size!==slots.length)failure_('Provide every article and news source link');
+  const links=p.links.map(l=>({...l,key:l.section+'|'+l.linkNumber,url:backlinkUrl_(l.url,true)}));
+  if(slots.some(s=>!links.some(l=>l.key===s)))failure_('Source links do not match this exam');
+  const sources=links.map(l=>l.url.replace(/\/$/,''));if(new Set(sources).size!==sources.length)failure_('Every source link must be different');
+  if(!Array.isArray(p.versions)||p.versions.length!==group.length||new Set(p.versions.map(v=>v.id)).size!==group.length)failure_('Refresh and reopen the source link editor',409);
+  for(const row of group){const version=p.versions.find(v=>v.id===row['Assignment ID']);if(!version)failure_('Refresh and reopen the source link editor',409);version_(row,version.version);}
+  const ids=new Set(group.map(r=>r['Assignment ID'])),members=new Set(group.map(r=>r['Member ID']));
+  if(d.assignments.some(r=>!ids.has(r['Assignment ID'])&&members.has(r['Member ID'])&&sources.includes(String(r['Source URL']).replace(/\/$/,''))))failure_('A source link is already assigned in another task',409);
+  const now=new Date().toISOString(),requests=[],before=[],after=[];
+  for(const row of group){const url=links.find(l=>l.key===slot(row)).url;if(url!==row['Source URL']){requests.push(rowRequest_('Backlink_Assignments',row,{'Source URL':url,Version:(Number(row.Version)||0)+1,'Last Updated':now}));before.push({id:row['Assignment ID'],url:row['Source URL']});after.push({id:row['Assignment ID'],url});}}
+  requests.push(logRequest_(actor,anchor['Exam Name'],'Exam source links',before,after,'Source Links Updated',anchor['Assignment ID'],'',p.operationId));
+  Sheets.Spreadsheets.batchUpdate({requests},SHEET_ID);
+  return {updated:after.length};
+}
+
 function saveUniversitySourceLinks_(user,p){
   if(user.role!=='admin')failure_('Only administrators can edit source links',403);
   operation_(p.operationId);
