@@ -248,7 +248,7 @@ function checkSetup(){
 }
 
 const BACKLINK_PLATFORMS = {'MEM-GAURANSHI':['LinkedIn','X','Threads'],'MEM-ANUKRITI':['Diigo','Blogger','Tumblr'],'MEM-YASH':['LinkedIn','X','Threads'],'MEM-ARHAN':['Tumblr','Blogger','Diigo']};
-function backlinkPlatforms_(memberId,row){const platforms=BACKLINK_PLATFORMS[memberId]||[];return memberId==='MEM-ARHAN'&&row&&row['Assignment Type']==='Exam'&&row.Section==='News'?[...platforms,'Classified Ads']:platforms;}
+function backlinkPlatforms_(memberId,row){const platforms=BACKLINK_PLATFORMS[memberId]||[];return ['MEM-ARHAN','MEM-ANUKRITI'].includes(memberId)&&row&&row['Assignment Type']==='Exam'&&row.Section==='News'?[...platforms,'Classified Ads']:platforms;}
 function backlinkUrl_(value,required){
   if(typeof value!=='string'||value.length>2048)failure_('Enter a valid web link');
   const url=value.trim();if(!url&&!required)return '';
@@ -354,9 +354,9 @@ function createBacklinkExam_(user,p){
   const sources=sections.flatMap(s=>s[1]);if(new Set(sources.map(v=>v.replace(/\/$/,''))).size!==sources.length)failure_('All source links must be different');
   const d=backlinkTables_(),previous=d.assignments.filter(r=>r['Request ID']===p.operationId);
   if(previous.length)return {assignments:previous.map(r=>backlinkView_(r,d.submissions)),duplicate:true};
-  const members=['MEM-YASH','MEM-ARHAN'].map(id=>unique_(table_('Team_Members').rows,id,'Member ID'));
+  const members=['MEM-YASH','MEM-ARHAN','MEM-ANUKRITI'].map(id=>unique_(table_('Team_Members').rows,id,'Member ID'));
   for(const m of members){
-    if(m.Team!=='Backlink Team'||m['Active Status']!=='Active')failure_('Yash and Arhan must both be active backlink members');
+    if(m.Team!=='Backlink Team'||m['Active Status']!=='Active')failure_('Yash, Arhan and Anukriti must all be active backlink members');
     const own=d.assignments.filter(r=>r['Member ID']===m['Member ID']);
     if(own.some(r=>r['Assignment Type']==='Exam'&&String(r['Exam Name']).trim().toLowerCase()===p.exam.trim().toLowerCase()&&String(r.Date).slice(0,10)===p.date))failure_('This exam is already assigned to '+m['Employee Name']+' for this date',409);
     if(own.some(r=>sources.map(v=>v.replace(/\/$/,'')).includes(String(r['Source URL']).replace(/\/$/,''))))failure_('A source link is already assigned to '+m['Employee Name'],409);
