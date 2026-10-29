@@ -177,13 +177,13 @@ test('university creation fails as one batch and .com sources retain the origina
 function examBacklinkPayload(){return {exam:'JEE Main',date:'2026-10-22',articles:Array.from({length:6},(_,i)=>'https://example.com/article/'+(i+1)),news:Array.from({length:4},(_,i)=>'https://example.com/news/'+(i+1)),operationId:randomUUID()};}
 test('exam assignment creates 6 Articles and 4 News for each member with 30 and 34 submissions',()=>{
  const f=backlinkFixture(),p=examBacklinkPayload();assert.throws(()=>f.context.createBacklinkExam_(f.gauranshi,p),e=>e.status===403);
- const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,20);assert.equal(f.tables.Backlink_Submissions.rows.length,64);
- for(const [id,count] of [['MEM-YASH',30],['MEM-ARHAN',34]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.length,10);assert.equal(rows.filter(r=>r.section==='Articles').length,6);assert.equal(rows.filter(r=>r.section==='News').length,4);assert.equal(rows.reduce((n,r)=>n+r.total,0),count);assert(rows.every(r=>r.assignmentType==='Exam'&&r.exam==='JEE Main'));}
+ const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,30);assert.equal(f.tables.Backlink_Submissions.rows.length,98);
+ for(const [id,count] of [['MEM-YASH',30],['MEM-ARHAN',34],['MEM-ANUKRITI',34]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.length,10);assert.equal(rows.filter(r=>r.section==='Articles').length,6);assert.equal(rows.filter(r=>r.section==='News').length,4);assert.equal(rows.reduce((n,r)=>n+r.total,0),count);assert(rows.every(r=>r.assignmentType==='Exam'&&r.exam==='JEE Main'));}
  assert.equal(new Set(r.assignments.map(r=>r.examGroupId)).size,1);
  assert(r.assignments.filter(r=>r.memberId==='MEM-YASH').every(r=>!r.platforms.includes('Classified Ads')));
  assert(r.assignments.filter(r=>r.memberId==='MEM-ARHAN'&&r.section==='Articles').every(r=>!r.platforms.includes('Classified Ads')));
  assert(r.assignments.filter(r=>r.memberId==='MEM-ARHAN'&&r.section==='News').every(r=>r.platforms.includes('Classified Ads')));
- assert.equal(f.context.createBacklinkExam_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Assignments.rows.length,20);
+ assert.equal(f.context.createBacklinkExam_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Assignments.rows.length,30);
  assert.throws(()=>f.context.createBacklinkExam_(f.admin,{...p,operationId:randomUUID()}),e=>e.status===409);
 });
 test('Classified Ads is rejected for Articles and Yash; Arhan News needs all four submissions',()=>{
@@ -202,9 +202,9 @@ test('exam links reject empty or oversized sections, duplicate sources, invalid 
 
 test('CLAT with five articles and three news links produces no empty slots or inflated totals',()=>{
  const f=backlinkFixture(),p=examBacklinkPayload();p.exam='CLAT';p.articles=p.articles.slice(0,5);p.news=p.news.slice(0,3);
- const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,16);assert.equal(f.tables.Backlink_Submissions.rows.length,51);
- for(const [id,total] of [['MEM-YASH',24],['MEM-ARHAN',27]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.filter(r=>r.section==='Articles').length,5);assert.equal(rows.filter(r=>r.section==='News').length,3);assert.equal(rows.reduce((n,r)=>n+r.total,0),total);assert(rows.every(r=>r.sourceUrl));}
- assert.equal(f.context.createBacklinkExam_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Submissions.rows.length,51);
+ const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,24);assert.equal(f.tables.Backlink_Submissions.rows.length,78);
+ for(const [id,total] of [['MEM-YASH',24],['MEM-ARHAN',27],['MEM-ANUKRITI',27]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.filter(r=>r.section==='Articles').length,5);assert.equal(rows.filter(r=>r.section==='News').length,3);assert.equal(rows.reduce((n,r)=>n+r.total,0),total);assert(rows.every(r=>r.sourceUrl));}
+ assert.equal(f.context.createBacklinkExam_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Submissions.rows.length,78);
 });
 
 function customUniversityPages(){return [['Overview','https://geduconnect.com/university/custom-main'],['Program & Fees','https://geduconnect.com/custom-fees'],['Admission process','https://geduconnect.com/admissions/custom'],['Placement & Career Support','https://geduconnect.com/career-services'],['Student Support','https://geduconnect.com/help/custom'],['FAQs','https://geduconnect.com/questions-custom']].map(([name,url])=>({name,url}));}
@@ -231,3 +231,5 @@ test('source link corrections reject duplicate, incomplete and non-GEDUCONNECT U
  for(const pages of [p.pages.slice(1),p.pages.map((r,i)=>i===1?{...r,url:p.pages[0].url}:r),p.pages.map((r,i)=>i===1?{...r,url:'https://geduconnect.com.evil.example/test'}:r)])assert.throws(()=>f.context.saveUniversitySourceLinks_(f.admin,{...p,pages}));
  assert.equal(f.tables.Backlink_Assignments.rows[0]['Source URL'],'https://geduconnect.com/university/vgu-online');
 });
+
+test('Anukriti News supports Classified Ads and retains three university platforms',()=>{const f=backlinkFixture(),r=f.context.createBacklinkExam_(f.admin,examBacklinkPayload()),own=r.assignments.filter(r=>r.memberId==='MEM-ANUKRITI');assert(own.filter(r=>r.section==='Articles').every(r=>r.total===3&&!r.platforms.includes('Classified Ads')));const news=own.find(r=>r.section==='News');assert.equal(news.total,4);const result=f.context.saveBacklink_(f.anukriti,{assignmentId:news.id,platform:'Classified Ads',submissionUrl:'https://example.com/classified',remarks:'',version:1,operationId:randomUUID()});assert.equal(result.assignment.completed,1);assert.equal(f.create('MEM-ANUKRITI','https://geduconnect.com/university/retained').total,3);});
