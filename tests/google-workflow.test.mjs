@@ -99,10 +99,10 @@ test('exam reviews require all nine sections and save independent exam columns',
 
 function backlinkFixture(options){
  const f=fixture(options);
- for(const name of ['Gauranshi','Anukriti','Yash','Arhan'])f.tables.Team_Members.rows.push({_row:f.tables.Team_Members.rows.length+2,'Member ID':'MEM-'+name.toUpperCase(),'Employee Name':name,Team:'Backlink Team','Active Status':'Active'});
+ for(const name of ['Gauranshi','Payal','Yash','Arhan'])f.tables.Team_Members.rows.push({_row:f.tables.Team_Members.rows.length+2,'Member ID':'MEM-'+name.toUpperCase(),'Employee Name':name,Team:'Backlink Team','Active Status':'Active'});
  f.admin={id:'ADMIN',role:'admin',name:'Admin'};
  f.gauranshi={id:'MEM-GAURANSHI',memberId:'MEM-GAURANSHI',name:'Gauranshi',role:'employee',team:'Backlink Team'};
- f.anukriti={id:'MEM-ANUKRITI',memberId:'MEM-ANUKRITI',name:'Anukriti',role:'employee',team:'Backlink Team'};
+ f.payal={id:'MEM-PAYAL',memberId:'MEM-PAYAL',name:'Payal',role:'employee',team:'Backlink Team'};
  f.create=(memberId='MEM-GAURANSHI',sourceUrl='https://www.geduconnect.in/university/test')=>f.context.createBacklink_(f.admin,{memberId,sourceUrl,operationId:randomUUID()}).assignment;
  return f;
 }
@@ -115,21 +115,21 @@ test('admin assigns one source link and exactly the member-specific three platfo
  assert.equal(f.tables.Backlink_Assignments.rows.length,1);assert.equal(f.tables.Backlink_Submissions.rows.length,3);
  assert.equal(f.context.createBacklink_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Assignments.rows.length,1);
  assert.throws(()=>f.context.createBacklink_(f.admin,{...p,operationId:randomUUID()}),e=>e.status===409);
- const second=f.create('MEM-ANUKRITI');
+ const second=f.create('MEM-PAYAL');
  assert.deepEqual(Array.from(second.platforms),['Diigo','Blogger','Tumblr']);assert.equal(f.tables.Backlink_Submissions.rows.length,6);
  assert.throws(()=>f.context.createBacklink_(f.admin,{...p,memberId:'MEM-SAHIL',operationId:randomUUID()}));
 });
 test('each member can only read and edit their own assignments and allowed platforms',()=>{
- const f=backlinkFixture(),a=f.create(),b=f.create('MEM-ANUKRITI');
+ const f=backlinkFixture(),a=f.create(),b=f.create('MEM-PAYAL');
  const p={assignmentId:a.id,platform:'LinkedIn',submissionUrl:'https://www.linkedin.com/posts/example',remarks:'',version:1,operationId:randomUUID()};
- assert.throws(()=>f.context.saveBacklink_(f.anukriti,p),e=>e.status===403);
+ assert.throws(()=>f.context.saveBacklink_(f.payal,p),e=>e.status===403);
  assert.throws(()=>f.context.saveBacklink_(f.gauranshi,{...p,platform:'Blogger'}),e=>e.status===403);
  assert.throws(()=>f.context.saveBacklink_(f.gauranshi,{...p,submissionUrl:'javascript:alert(1)'}));
  assert.throws(()=>f.context.saveBacklink_(f.gauranshi,{...p,submissionUrl:'https://user:pass@example.com/post'}));
  assert.throws(()=>f.context.saveBacklink_(f.gauranshi,{...p,submissionUrl:'https://www.geduconnect.in/university/test'}));
  assert.equal(f.context.workspace_(f.gauranshi,false).backlinks.length,1);
  assert.equal(f.context.workspace_(f.gauranshi,false).backlinks[0].id,a.id);
- assert.equal(f.context.workspace_(f.anukriti,false).backlinks[0].id,b.id);
+ assert.equal(f.context.workspace_(f.payal,false).backlinks[0].id,b.id);
  assert.equal(f.context.workspace_(f.admin,false).backlinks.length,2);
 });
 test('three distinct platform submissions complete a source and clearing one reopens it',()=>{
@@ -156,7 +156,7 @@ test('a university creates all six exact .com links for both members atomically'
  assert.throws(()=>f.context.createBacklinkUniversity_(f.gauranshi,p),e=>e.status===403);
  const result=f.context.createBacklinkUniversity_(f.admin,p);assert.equal(result.assignments.length,12);assert.equal(f.tables.Backlink_Submissions.rows.length,36);
  const suffixes=['','/program-fees','/admission-process','/placement-career-support','/student-support','/faqs'];
- for(const id of ['MEM-GAURANSHI','MEM-ANUKRITI']){const rows=result.assignments.filter(r=>r.memberId===id);assert.deepEqual(Array.from(rows,r=>r.sourceUrl),suffixes.map(s=>p.sourceUrl+s));assert(rows.every(r=>r.university==='VGU Online'&&r.date===p.date));assert.equal(new Set(rows.map(r=>r.page)).size,6);}
+ for(const id of ['MEM-GAURANSHI','MEM-PAYAL']){const rows=result.assignments.filter(r=>r.memberId===id);assert.deepEqual(Array.from(rows,r=>r.sourceUrl),suffixes.map(s=>p.sourceUrl+s));assert(rows.every(r=>r.university==='VGU Online'&&r.date===p.date));assert.equal(new Set(rows.map(r=>r.page)).size,6);}
  assert.equal(f.context.createBacklinkUniversity_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Assignments.rows.length,12);
  assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{...p,operationId:randomUUID()}),e=>e.status===409);
  assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{...p,sourceUrl:'https://geduconnect.com.evil.example/university/vgu-online',operationId:randomUUID()}));
@@ -178,7 +178,7 @@ function examBacklinkPayload(){return {exam:'JEE Main',date:'2026-10-22',article
 test('exam assignment creates 6 Articles and 4 News for each member with 30 and 34 submissions',()=>{
  const f=backlinkFixture(),p=examBacklinkPayload();assert.throws(()=>f.context.createBacklinkExam_(f.gauranshi,p),e=>e.status===403);
  const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,30);assert.equal(f.tables.Backlink_Submissions.rows.length,98);
- for(const [id,count] of [['MEM-YASH',30],['MEM-ARHAN',34],['MEM-ANUKRITI',34]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.length,10);assert.equal(rows.filter(r=>r.section==='Articles').length,6);assert.equal(rows.filter(r=>r.section==='News').length,4);assert.equal(rows.reduce((n,r)=>n+r.total,0),count);assert(rows.every(r=>r.assignmentType==='Exam'&&r.exam==='JEE Main'));}
+ for(const [id,count] of [['MEM-YASH',30],['MEM-ARHAN',34],['MEM-PAYAL',34]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.length,10);assert.equal(rows.filter(r=>r.section==='Articles').length,6);assert.equal(rows.filter(r=>r.section==='News').length,4);assert.equal(rows.reduce((n,r)=>n+r.total,0),count);assert(rows.every(r=>r.assignmentType==='Exam'&&r.exam==='JEE Main'));}
  assert.equal(new Set(r.assignments.map(r=>r.examGroupId)).size,1);
  assert(r.assignments.filter(r=>r.memberId==='MEM-YASH').every(r=>!r.platforms.includes('Classified Ads')));
  assert(r.assignments.filter(r=>r.memberId==='MEM-ARHAN'&&r.section==='Articles').every(r=>!r.platforms.includes('Classified Ads')));
@@ -203,14 +203,14 @@ test('exam links reject empty or oversized sections, duplicate sources, invalid 
 test('CLAT with five articles and three news links produces no empty slots or inflated totals',()=>{
  const f=backlinkFixture(),p=examBacklinkPayload();p.exam='CLAT';p.articles=p.articles.slice(0,5);p.news=p.news.slice(0,3);
  const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,24);assert.equal(f.tables.Backlink_Submissions.rows.length,78);
- for(const [id,total] of [['MEM-YASH',24],['MEM-ARHAN',27],['MEM-ANUKRITI',27]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.filter(r=>r.section==='Articles').length,5);assert.equal(rows.filter(r=>r.section==='News').length,3);assert.equal(rows.reduce((n,r)=>n+r.total,0),total);assert(rows.every(r=>r.sourceUrl));}
+ for(const [id,total] of [['MEM-YASH',24],['MEM-ARHAN',27],['MEM-PAYAL',27]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.filter(r=>r.section==='Articles').length,5);assert.equal(rows.filter(r=>r.section==='News').length,3);assert.equal(rows.reduce((n,r)=>n+r.total,0),total);assert(rows.every(r=>r.sourceUrl));}
  assert.equal(f.context.createBacklinkExam_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Submissions.rows.length,78);
 });
 
 function customUniversityPages(){return [['Overview','https://geduconnect.com/university/custom-main'],['Program & Fees','https://geduconnect.com/custom-fees'],['Admission process','https://geduconnect.com/admissions/custom'],['Placement & Career Support','https://geduconnect.com/career-services'],['Student Support','https://geduconnect.com/help/custom'],['FAQs','https://geduconnect.com/questions-custom']].map(([name,url])=>({name,url}));}
 test('custom university source links are saved exactly and daily counting uses university identity',()=>{
  const f=backlinkFixture(),p={university:'Custom University',date:'2026-10-23',pages:customUniversityPages(),operationId:randomUUID()};
- const r=f.context.createBacklinkUniversity_(f.admin,p);assert.equal(r.assignments.length,12);for(const id of ['MEM-GAURANSHI','MEM-ANUKRITI'])assert.deepEqual(Array.from(r.assignments.filter(r=>r.memberId===id),r=>r.sourceUrl),p.pages.map(p=>p.url));
+ const r=f.context.createBacklinkUniversity_(f.admin,p);assert.equal(r.assignments.length,12);for(const id of ['MEM-GAURANSHI','MEM-PAYAL'])assert.deepEqual(Array.from(r.assignments.filter(r=>r.memberId===id),r=>r.sourceUrl),p.pages.map(p=>p.url));
  f.context.createBacklinkUniversity_(f.admin,{university:'Second',date:p.date,sourceUrl:'https://geduconnect.com/university/second',operationId:randomUUID()});
  assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{university:'Third',date:p.date,sourceUrl:'https://geduconnect.com/university/third',operationId:randomUUID()}),/Two universities/);
 });
@@ -221,7 +221,7 @@ test('admin link corrections update both members, retain submissions, and reject
  assert.throws(()=>f.context.saveUniversitySourceLinks_(f.gauranshi,p),e=>e.status===403);
  assert.throws(()=>f.context.saveUniversitySourceLinks_(f.admin,{...p,versions:p.versions.map(v=>({...v,version:0}))}),e=>e.status===409);
  assert.equal(f.context.saveUniversitySourceLinks_(f.admin,p).updated,12);assert(f.tables.Backlink_Submissions.rows.some(r=>r['Submission URL']==='https://linkedin.com/posts/existing'&&r.Remarks==='Keep this'));
- for(const id of ['MEM-GAURANSHI','MEM-ANUKRITI'])assert.deepEqual(f.tables.Backlink_Assignments.rows.filter(r=>r['Member ID']===id).map(r=>r['Source URL']),p.pages.map(p=>p.url));
+ for(const id of ['MEM-GAURANSHI','MEM-PAYAL'])assert.deepEqual(f.tables.Backlink_Assignments.rows.filter(r=>r['Member ID']===id).map(r=>r['Source URL']),p.pages.map(p=>p.url));
  assert.equal(f.context.saveUniversitySourceLinks_(f.admin,p).duplicate,true);
  assert.throws(()=>f.context.saveUniversitySourceLinks_(f.admin,{...p,operationId:randomUUID()}),e=>e.status===409);
 });
@@ -232,8 +232,10 @@ test('source link corrections reject duplicate, incomplete and non-GEDUCONNECT U
  assert.equal(f.tables.Backlink_Assignments.rows[0]['Source URL'],'https://geduconnect.com/university/vgu-online');
 });
 
-test('Anukriti News supports Classified Ads and retains three university platforms',()=>{const f=backlinkFixture(),r=f.context.createBacklinkExam_(f.admin,examBacklinkPayload()),own=r.assignments.filter(r=>r.memberId==='MEM-ANUKRITI');assert(own.filter(r=>r.section==='Articles').every(r=>r.total===3&&!r.platforms.includes('Classified Ads')));const news=own.find(r=>r.section==='News');assert.equal(news.total,4);const result=f.context.saveBacklink_(f.anukriti,{assignmentId:news.id,platform:'Classified Ads',submissionUrl:'https://example.com/classified',remarks:'',version:1,operationId:randomUUID()});assert.equal(result.assignment.completed,1);assert.equal(f.create('MEM-ANUKRITI','https://geduconnect.com/university/retained').total,3);});
+test('Payal News supports Classified Ads and retains three university platforms',()=>{const f=backlinkFixture(),r=f.context.createBacklinkExam_(f.admin,examBacklinkPayload()),own=r.assignments.filter(r=>r.memberId==='MEM-PAYAL');assert(own.filter(r=>r.section==='Articles').every(r=>r.total===3&&!r.platforms.includes('Classified Ads')));const news=own.find(r=>r.section==='News');assert.equal(news.total,4);const result=f.context.saveBacklink_(f.payal,{assignmentId:news.id,platform:'Classified Ads',submissionUrl:'https://example.com/classified',remarks:'',version:1,operationId:randomUUID()});assert.equal(result.assignment.completed,1);assert.equal(f.create('MEM-PAYAL','https://geduconnect.com/university/retained').total,3);});
 
-function examEditFixture(){const f=backlinkFixture(),created=f.context.createBacklinkExam_(f.admin,examBacklinkPayload()).assignments;f.context.saveBacklink_(f.anukriti,{assignmentId:created.find(r=>r.memberId==='MEM-ANUKRITI').id,platform:'Diigo',version:1,submissionUrl:'https://example.com/existing',remarks:'Keep this',operationId:randomUUID()});const links=created.filter(r=>r.memberId==='MEM-YASH').map(r=>({section:r.section,linkNumber:r.linkNumber,url:r.sourceUrl}));links[0].url='https://example.com/corrected-article';return {...f,p:{assignmentId:created[0].id,links,versions:f.tables.Backlink_Assignments.rows.map(r=>({id:r['Assignment ID'],version:r.Version})),operationId:randomUUID()}};}
-test('admin exam source correction updates matching slots for all owners and preserves submissions and progress',()=>{const f=examEditFixture(),before=JSON.stringify(f.tables.Backlink_Submissions.rows),progress=f.tables.Backlink_Assignments.rows.map(r=>[r['Completed Platforms'],r['Overall Status']]);assert.throws(()=>f.context.saveExamSourceLinks_(f.anukriti,f.p),e=>e.status===403);assert.equal(f.context.saveExamSourceLinks_(f.admin,f.p).updated,3);assert.equal(JSON.stringify(f.tables.Backlink_Submissions.rows),before);assert.deepEqual(f.tables.Backlink_Assignments.rows.map(r=>[r['Completed Platforms'],r['Overall Status']]),progress);assert.equal(f.tables.Backlink_Assignments.rows.filter(r=>r['Source URL']===f.p.links[0].url).length,3);assert.equal(f.context.saveExamSourceLinks_(f.admin,f.p).duplicate,true);assert.throws(()=>f.context.saveExamSourceLinks_(f.admin,{...f.p,operationId:randomUUID()}),e=>e.status===409);});
+function examEditFixture(){const f=backlinkFixture(),created=f.context.createBacklinkExam_(f.admin,examBacklinkPayload()).assignments;f.context.saveBacklink_(f.payal,{assignmentId:created.find(r=>r.memberId==='MEM-PAYAL').id,platform:'Diigo',version:1,submissionUrl:'https://example.com/existing',remarks:'Keep this',operationId:randomUUID()});const links=created.filter(r=>r.memberId==='MEM-YASH').map(r=>({section:r.section,linkNumber:r.linkNumber,url:r.sourceUrl}));links[0].url='https://example.com/corrected-article';return {...f,p:{assignmentId:created[0].id,links,versions:f.tables.Backlink_Assignments.rows.map(r=>({id:r['Assignment ID'],version:r.Version})),operationId:randomUUID()}};}
+test('admin exam source correction updates matching slots for all owners and preserves submissions and progress',()=>{const f=examEditFixture(),before=JSON.stringify(f.tables.Backlink_Submissions.rows),progress=f.tables.Backlink_Assignments.rows.map(r=>[r['Completed Platforms'],r['Overall Status']]);assert.throws(()=>f.context.saveExamSourceLinks_(f.payal,f.p),e=>e.status===403);assert.equal(f.context.saveExamSourceLinks_(f.admin,f.p).updated,3);assert.equal(JSON.stringify(f.tables.Backlink_Submissions.rows),before);assert.deepEqual(f.tables.Backlink_Assignments.rows.map(r=>[r['Completed Platforms'],r['Overall Status']]),progress);assert.equal(f.tables.Backlink_Assignments.rows.filter(r=>r['Source URL']===f.p.links[0].url).length,3);assert.equal(f.context.saveExamSourceLinks_(f.admin,f.p).duplicate,true);assert.throws(()=>f.context.saveExamSourceLinks_(f.admin,{...f.p,operationId:randomUUID()}),e=>e.status===409);});
 test('exam source correction rejects incomplete, duplicate, unsafe and stale input without partial writes',()=>{for(const change of [p=>({...p,links:p.links.slice(1)}),p=>({...p,links:p.links.map((l,i)=>i===1?{...l,url:p.links[0].url}:l)}),p=>({...p,links:p.links.map((l,i)=>i===0?{...l,url:'javascript:alert(1)'}:l)}),p=>({...p,versions:p.versions.map(v=>({...v,version:0}))})]){const f=examEditFixture(),before=JSON.stringify(f.tables.Backlink_Assignments.rows);assert.throws(()=>f.context.saveExamSourceLinks_(f.admin,change(f.p)));assert.equal(JSON.stringify(f.tables.Backlink_Assignments.rows),before);}});
+
+test('member sessions use the current team and inactive accounts are rejected',()=>{const f=backlinkFixture(),row=f.tables.Team_Members.rows.find(r=>r['Member ID']==='MEM-PAYAL');row['Auth Subject']='MEM-PAYAL';row['Login ID']='payal@example.com';const identity={id:'MEM-PAYAL',role:'employee',loginId:'payal@example.com'};assert.equal(f.context.profile_(identity).team,'Backlink Team');row['Active Status']='Inactive';assert.throws(()=>f.context.profile_(identity),e=>e.status===403);});
