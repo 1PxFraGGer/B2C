@@ -248,8 +248,8 @@ function checkSetup(){
   privateRoot_();Sheets.Spreadsheets.get(SHEET_ID,{fields:'spreadsheetId'});console.log('Google backend configuration verified.');
 }
 
-const BACKLINK_PLATFORMS = {'MEM-GAURANSHI':['LinkedIn','X','Threads'],'MEM-PAYAL':['Diigo','Blogger','Tumblr'],'MEM-SHIVANI':['Diigo','Blogger','Tumblr'],'MEM-DEEPANSH':['Diigo','Blogger','Tumblr'],'MEM-YASH':['LinkedIn','X','Threads'],'MEM-ARHAN':['Tumblr','Blogger','Diigo']};
-function backlinkPlatforms_(memberId,row){const platforms=BACKLINK_PLATFORMS[memberId]||[];return ['MEM-ARHAN','MEM-PAYAL','MEM-SHIVANI','MEM-DEEPANSH'].includes(memberId)&&row&&row['Assignment Type']==='Exam'&&row.Section==='News'?[...platforms,'Classified Ads']:platforms;}
+const BACKLINK_PLATFORMS = {'MEM-GAURANSHI':['LinkedIn','X','Threads'],'MEM-PAYAL':['Diigo','Blogger','Tumblr'],'MEM-SHIVANI':['Diigo','Blogger','Tumblr'],'MEM-DEEPANSH':['Diigo','Blogger','Tumblr'],'MEM-SAKSHI':['Diigo','Blogger','Tumblr'],'MEM-YASH':['LinkedIn','X','Threads'],'MEM-ARHAN':['Tumblr','Blogger','Diigo']};
+function backlinkPlatforms_(memberId,row){const platforms=BACKLINK_PLATFORMS[memberId]||[];return ['MEM-ARHAN','MEM-PAYAL','MEM-SHIVANI','MEM-DEEPANSH','MEM-SAKSHI'].includes(memberId)&&row&&row['Assignment Type']==='Exam'&&row.Section==='News'?[...platforms,'Classified Ads']:platforms;}
 function backlinkUrl_(value,required){
   if(typeof value!=='string'||value.length>2048)failure_('Enter a valid web link');
   const url=value.trim();if(!url&&!required)return '';
