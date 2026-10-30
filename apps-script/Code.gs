@@ -265,7 +265,7 @@ function backlinkView_(row,submissions){
     return {platform,submissionUrl:String(s['Submission URL']||''),remarks:String(s.Remarks||''),status:s['Submission URL']?'Done':'Pending'};
   });
   const completed=items.filter(s=>s.status==='Done').length,total=platforms.length;
-  return {id:key_(row['Assignment ID']),date:row.Date,project:row.Project||'GEDUCONNECT',sourceUrl:String(row['Source URL']||''),university:row['University Name']||'',page:row['Page Name']||'',assignmentType:row['Assignment Type']||'University',exam:row['Exam Name']||'',section:row.Section||'',linkNumber:Number(row['Link Number'])||0,examGroupId:row['Exam Group ID']||'',assignedTo:row['Assigned To'],memberId,version:Number(row.Version)||0,platforms,submissions:items,completed,total,progress:total?completed/total:0,status:total&&completed===total?'Completed':completed?'In Progress':'Pending',lastUpdated:row['Last Updated']||'',completedAt:row['Completed At']||''};
+  return {id:key_(row['Assignment ID']),date:row.Date,project:row.Project||'GEDUCONNECT',sourceUrl:String(row['Source URL']||''),university:row['University Name']||'',page:row['Page Name']||'',assignmentType:row['Assignment Type']||'University',exam:row['Exam Name']||'',section:row.Section||'',linkNumber:Number(row['Link Number'])||0,examGroupId:row['Exam Group ID']||'',sourceGroupId:row['Request ID']||'',assignedTo:row['Assigned To'],memberId,version:Number(row.Version)||0,platforms,submissions:items,completed,total,progress:total?completed/total:0,status:total&&completed===total?'Completed':completed?'In Progress':'Pending',lastUpdated:row['Last Updated']||'',completedAt:row['Completed At']||''};
 }
 function backlinkTables_(){return {assignments:table_('Backlink_Assignments').rows.filter(r=>required_(r,['Assignment ID','Source URL','Member ID'])),submissions:table_('Backlink_Submissions').rows.filter(r=>required_(r,['Submission ID','Assignment ID','Member ID','Platform']))};}
 function appendRecord_(name,record){
@@ -317,18 +317,25 @@ function backlinkUniversityBase_(value){
   if(!/^https:\/\/(?:www\.)?geduconnect\.com\/university\/[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(url))failure_('Enter the GEDUCONNECT university overview link, such as https://geduconnect.com/university/vgu-online');
   return url.replace(/^https:\/\/(?:www\.)?/i,'https://').replace('GEDUCONNECT.COM','geduconnect.com');
 }
+const INDIVIDUAL_BACKLINK_MEMBERS = ['MEM-PAYAL','MEM-SAKSHI','MEM-SHIVANI','MEM-DEEPANSH'];
+function assignmentMembers_(p,legacy){
+  if(p.memberId!==undefined&&!INDIVIDUAL_BACKLINK_MEMBERS.includes(p.memberId))failure_('Select Payal, Sakshi, Shivani or Deepansh');
+  const ids=p.memberId!==undefined?[p.memberId]:legacy;
+  return ids.map(id=>{const m=unique_(table_('Team_Members').rows,id,'Member ID');if(m.Team!=='Backlink Team'||m['Active Status']!=='Active'||backlinkPlatforms_(id).length!==3)failure_('Select an active backlink team member');return m;});
+}
 function createBacklinkUniversity_(user,p){
   if(user.role!=='admin')failure_('Only administrators can assign universities',403);
   operation_(p.operationId);
   if(typeof p.university!=='string'||!p.university.trim()||p.university.length>200)failure_('Enter a university name');
   const pages=p.pages?universitySourcePages_(p.pages):BACKLINK_UNIVERSITY_PAGES.map(page=>({name:page[0],url:backlinkUniversityBase_(p.sourceUrl)+(page[1]?'/'+page[1]:'')})),date=p.date;
   if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date)||isNaN(new Date(date+'T00:00:00Z').getTime())||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)failure_('Enter a valid assignment date');
+  const members=assignmentMembers_(p,['MEM-GAURANSHI','MEM-PAYAL']);
   const d=backlinkTables_(),previous=d.assignments.filter(r=>r['Request ID']===p.operationId);
+  if(previous.some(r=>!members.some(m=>m['Member ID']===r['Member ID'])))failure_('This save operation belongs to another employee. Try again.',409);
   if(previous.length)return {assignments:previous.map(r=>backlinkView_(r,d.submissions)),duplicate:true};
-  const members=['MEM-GAURANSHI','MEM-PAYAL'].map(id=>unique_(table_('Team_Members').rows,id,'Member ID'));
   for(const m of members){
     if(m.Team!=='Backlink Team'||m['Active Status']!=='Active'||backlinkPlatforms_(m['Member ID']).length!==3)failure_('Both backlink members must be active');
-    const own=d.assignments.filter(r=>r['Member ID']===m['Member ID']);
+    const own=d.assignments.filter(r=>r['Member ID']===m['Member ID']&&r['Assignment Type']!=='Exam');
     const sources=pages.map(page=>page.url.replace(/\/$/,''));
     if(own.some(r=>sources.includes(String(r['Source URL']).replace(/\/$/,''))||(String(r.Date).slice(0,10)===date&&String(r['University Name']||'').trim().toLowerCase()===p.university.trim().toLowerCase())))failure_('This university is already assigned to '+m['Employee Name'],409);
     const daily=new Set(own.filter(r=>String(r.Date).slice(0,10)===date).map(r=>String(r['University Name']||r['Source URL']).trim().toLowerCase()));
@@ -336,7 +343,7 @@ function createBacklinkUniversity_(user,p){
   }
   const now=new Date().toISOString(),records=[],items=[],requests=[];
   for(const m of members)for(const page of pages){
-    const id='BL-'+Utilities.getUuid(),sourceUrl=page.url,record={'Assignment ID':id,Date:date,Project:'GEDUCONNECT','Source URL':sourceUrl,'Assigned To':m['Employee Name'],'Member ID':m['Member ID'],'Required Platforms':3,'Completed Platforms':0,'Progress Percentage':0,'Overall Status':'Pending','Last Updated':now,Version:1,'Completed At':'','Request ID':p.operationId,'University Name':p.university.trim(),'Page Name':page.name};
+    const id='BL-'+Utilities.getUuid(),sourceUrl=page.url,record={'Assignment ID':id,Date:date,Project:'GEDUCONNECT','Source URL':sourceUrl,'Assigned To':m['Employee Name'],'Member ID':m['Member ID'],'Required Platforms':3,'Completed Platforms':0,'Progress Percentage':0,'Overall Status':'Pending','Last Updated':now,Version:1,'Completed At':'','Request ID':p.operationId,'University Name':p.university.trim(),'Page Name':page.name,'Assignment Type':'University'};
     records.push(record);requests.push(appendRecord_('Backlink_Assignments',record));
     backlinkPlatforms_(m['Member ID']).forEach((platform,i)=>{const s={'Submission ID':id+'-'+(i+1),'Assignment ID':id,'Member ID':m['Member ID'],Platform:platform,'Submission URL':'',Remarks:'',Status:'Pending','Last Updated':now,Version:1,'Completed At':''};items.push(s);requests.push(appendRecord_('Backlink_Submissions',s));});
     requests.push(logRequest_({...user,memberId:m['Member ID'],team:'Backlink Team'},p.university.trim(),page.name,{},record,'Assignment Created',id,'',p.operationId));
@@ -353,9 +360,10 @@ function createBacklinkExam_(user,p){
   if(!Array.isArray(p.articles)||p.articles.length<1||p.articles.length>6||!Array.isArray(p.news)||p.news.length<1||p.news.length>4)failure_('Provide 1–6 article links and 1–4 news links');
   const sections=[['Articles',p.articles.map(v=>backlinkUrl_(v,true))],['News',p.news.map(v=>backlinkUrl_(v,true))]];
   const sources=sections.flatMap(s=>s[1]);if(new Set(sources.map(v=>v.replace(/\/$/,''))).size!==sources.length)failure_('All source links must be different');
+  const members=assignmentMembers_(p,['MEM-YASH','MEM-ARHAN','MEM-PAYAL']);
   const d=backlinkTables_(),previous=d.assignments.filter(r=>r['Request ID']===p.operationId);
+  if(previous.some(r=>!members.some(m=>m['Member ID']===r['Member ID'])))failure_('This save operation belongs to another employee. Try again.',409);
   if(previous.length)return {assignments:previous.map(r=>backlinkView_(r,d.submissions)),duplicate:true};
-  const members=['MEM-YASH','MEM-ARHAN','MEM-PAYAL'].map(id=>unique_(table_('Team_Members').rows,id,'Member ID'));
   for(const m of members){
     if(m.Team!=='Backlink Team'||m['Active Status']!=='Active')failure_('Yash, Arhan and Payal must all be active backlink members');
     const own=d.assignments.filter(r=>r['Member ID']===m['Member ID']);
@@ -407,18 +415,19 @@ function saveUniversitySourceLinks_(user,p){
   if(user.role!=='admin')failure_('Only administrators can edit source links',403);
   operation_(p.operationId);
   const d=backlinkTables_(),anchor=unique_(d.assignments,p.assignmentId,'Assignment ID');
-  if(anchor['Assignment Type']==='Exam'||!anchor['University Name']||!['MEM-GAURANSHI','MEM-PAYAL'].includes(anchor['Member ID']))failure_('Select a university backlink assignment');
+  if(anchor['Assignment Type']==='Exam'||!anchor['University Name']||!['MEM-GAURANSHI',...INDIVIDUAL_BACKLINK_MEMBERS].includes(anchor['Member ID']))failure_('Select a university backlink assignment');
   const actor={...user,memberId:anchor['Member ID'],team:'Backlink Team'};
   if(seen_(actor,p.operationId,'',anchor['Assignment ID']))return {duplicate:true};
-  const pages=universitySourcePages_(p.pages),key=String(anchor['University Name']).trim().toLowerCase(),group=d.assignments.filter(r=>r['Assignment Type']!=='Exam'&&String(r['University Name']||'').trim().toLowerCase()===key&&String(r.Date)===String(anchor.Date)&&['MEM-GAURANSHI','MEM-PAYAL'].includes(r['Member ID']));
-  if(group.length!==12||['MEM-GAURANSHI','MEM-PAYAL'].some(id=>BACKLINK_UNIVERSITY_PAGES.some(page=>group.filter(r=>r['Member ID']===id&&r['Page Name']===page[0]).length!==1)))failure_('Both members must have all six university pages',409);
-  if(!Array.isArray(p.versions)||p.versions.length!==12||new Set(p.versions.map(v=>v.id)).size!==12)failure_('Refresh and reopen the source link editor',409);
+  const pages=universitySourcePages_(p.pages),key=String(anchor['University Name']).trim().toLowerCase(),group=d.assignments.filter(r=>r['Assignment Type']!=='Exam'&&String(r['University Name']||'').trim().toLowerCase()===key&&String(r.Date)===String(anchor.Date)&&(anchor['Request ID']?r['Request ID']===anchor['Request ID']:['MEM-GAURANSHI','MEM-PAYAL'].includes(r['Member ID']))),owners=[...new Set(group.map(r=>r['Member ID']))];
+  if(!owners.length||group.length!==owners.length*6||owners.some(id=>BACKLINK_UNIVERSITY_PAGES.some(page=>group.filter(r=>r['Member ID']===id&&r['Page Name']===page[0]).length!==1)))failure_('Each assigned member must have all six university pages',409);
+  if(!Array.isArray(p.versions)||p.versions.length!==group.length||new Set(p.versions.map(v=>v.id)).size!==group.length)failure_('Refresh and reopen the source link editor',409);
   for(const row of group){const version=p.versions.find(v=>v.id===row['Assignment ID']);if(!version)failure_('Refresh and reopen the source link editor',409);version_(row,version.version);}
   const sources=pages.map(page=>page.url.replace(/\/$/,'')),ids=new Set(group.map(r=>r['Assignment ID']));
-  if(d.assignments.some(r=>!ids.has(r['Assignment ID'])&&['MEM-GAURANSHI','MEM-PAYAL'].includes(r['Member ID'])&&sources.includes(String(r['Source URL']).replace(/\/$/,''))))failure_('A source link is already assigned in another university',409);
+  if(d.assignments.some(r=>!ids.has(r['Assignment ID'])&&owners.includes(r['Member ID'])&&sources.includes(String(r['Source URL']).replace(/\/$/,''))))failure_('A source link is already assigned in another university',409);
   const now=new Date().toISOString(),requests=[],before=[],after=[];
   for(const row of group){const url=pages.find(p=>p.name===row['Page Name']).url;if(url!==row['Source URL']){requests.push(rowRequest_('Backlink_Assignments',row,{'Source URL':url,Version:(Number(row.Version)||0)+1,'Last Updated':now}));before.push({id:row['Assignment ID'],url:row['Source URL']});after.push({id:row['Assignment ID'],url});}}
   requests.push(logRequest_(actor,anchor['University Name'],'University source links',before,after,'Source Links Updated',anchor['Assignment ID'],'',p.operationId));
   Sheets.Spreadsheets.batchUpdate({requests},SHEET_ID);
   return {updated:after.length};
 }
+
