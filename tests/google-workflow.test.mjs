@@ -109,7 +109,7 @@ function backlinkFixture(options){
 test('admin assigns one source link and exactly the member-specific three platforms',()=>{
  const f=backlinkFixture(),op=randomUUID(),p={memberId:'MEM-GAURANSHI',sourceUrl:'https://www.geduconnect.in/university/test',operationId:op};
  assert.throws(()=>f.context.createBacklink_(f.gauranshi,p),e=>e.status===403);
- assert.throws(()=>f.context.createBacklink_(f.admin,{...p,sourceUrl:'https://other.example/test'}),/GEDUCONNECT/);
+ assert.throws(()=>f.context.createBacklink_(f.admin,{...p,sourceUrl:'javascript:alert(1)'}),/http or https/);
  const first=f.context.createBacklink_(f.admin,p);
  assert.deepEqual(Array.from(first.assignment.platforms),['LinkedIn','X','Threads']);assert.equal(first.assignment.total,3);assert.equal(first.assignment.completed,0);
  assert.equal(f.tables.Backlink_Assignments.rows.length,1);assert.equal(f.tables.Backlink_Submissions.rows.length,3);
@@ -209,7 +209,7 @@ test('CLAT with five articles and three news links produces no empty slots or in
 
 function customUniversityPages(){return [['Overview','https://geduconnect.com/university/custom-main'],['Program & Fees','https://geduconnect.com/custom-fees'],['Admission process','https://geduconnect.com/admissions/custom'],['Placement & Career Support','https://geduconnect.com/career-services'],['Student Support','https://geduconnect.com/help/custom'],['FAQs','https://geduconnect.com/questions-custom']].map(([name,url])=>({name,url}));}
 test('custom university source links are saved exactly and daily counting uses university identity',()=>{
- const f=backlinkFixture(),p={university:'Custom University',date:'2026-10-23',pages:customUniversityPages(),operationId:randomUUID()};
+ const f=backlinkFixture(),p={university:'Custom University',date:'2026-10-23',pages:customUniversityPages().map((p,i)=>({...p,url:'https://www.collegenirnay.com/online-university/custom/'+i})),operationId:randomUUID()};
  const r=f.context.createBacklinkUniversity_(f.admin,p);assert.equal(r.assignments.length,12);for(const id of ['MEM-GAURANSHI','MEM-PAYAL'])assert.deepEqual(Array.from(r.assignments.filter(r=>r.memberId===id),r=>r.sourceUrl),p.pages.map(p=>p.url));
  f.context.createBacklinkUniversity_(f.admin,{university:'Second',date:p.date,sourceUrl:'https://geduconnect.com/university/second',operationId:randomUUID()});
  assert.throws(()=>f.context.createBacklinkUniversity_(f.admin,{university:'Third',date:p.date,sourceUrl:'https://geduconnect.com/university/third',operationId:randomUUID()}),/Two universities/);
@@ -217,7 +217,7 @@ test('custom university source links are saved exactly and daily counting uses u
 test('admin link corrections update both members, retain submissions, and reject stale or unauthorized edits',()=>{
  const f=backlinkFixture(),created=f.context.createBacklinkUniversity_(f.admin,{university:'VGU Online',date:'2026-10-23',sourceUrl:'https://geduconnect.com/university/vgu-online',operationId:randomUUID()}).assignments;
  const a=created[0];f.context.saveBacklink_(f.gauranshi,{assignmentId:a.id,platform:'LinkedIn',version:1,submissionUrl:'https://linkedin.com/posts/existing',remarks:'Keep this',operationId:randomUUID()});
- const p={assignmentId:a.id,pages:customUniversityPages(),versions:f.tables.Backlink_Assignments.rows.map(r=>({id:r['Assignment ID'],version:r.Version})),operationId:randomUUID()};
+ const p={assignmentId:a.id,pages:customUniversityPages().map((p,i)=>({...p,url: i%2 ? 'https://other.example/custom/'+i : 'https://www.collegenirnay.com/online-university/custom/'+i})),versions:f.tables.Backlink_Assignments.rows.map(r=>({id:r['Assignment ID'],version:r.Version})),operationId:randomUUID()};
  assert.throws(()=>f.context.saveUniversitySourceLinks_(f.gauranshi,p),e=>e.status===403);
  assert.throws(()=>f.context.saveUniversitySourceLinks_(f.admin,{...p,versions:p.versions.map(v=>({...v,version:0}))}),e=>e.status===409);
  assert.equal(f.context.saveUniversitySourceLinks_(f.admin,p).updated,12);assert(f.tables.Backlink_Submissions.rows.some(r=>r['Submission URL']==='https://linkedin.com/posts/existing'&&r.Remarks==='Keep this'));
@@ -225,10 +225,10 @@ test('admin link corrections update both members, retain submissions, and reject
  assert.equal(f.context.saveUniversitySourceLinks_(f.admin,p).duplicate,true);
  assert.throws(()=>f.context.saveUniversitySourceLinks_(f.admin,{...p,operationId:randomUUID()}),e=>e.status===409);
 });
-test('source link corrections reject duplicate, incomplete and non-GEDUCONNECT URLs before writing',()=>{
+test('source link corrections reject duplicate, incomplete and unsafe URLs before writing',()=>{
  const f=backlinkFixture(),created=f.context.createBacklinkUniversity_(f.admin,{university:'VGU Online',date:'2026-10-23',sourceUrl:'https://geduconnect.com/university/vgu-online',operationId:randomUUID()}).assignments;
  const p={assignmentId:created[0].id,versions:created.map(r=>({id:r.id,version:r.version})),pages:customUniversityPages(),operationId:randomUUID()};
- for(const pages of [p.pages.slice(1),p.pages.map((r,i)=>i===1?{...r,url:p.pages[0].url}:r),p.pages.map((r,i)=>i===1?{...r,url:'https://geduconnect.com.evil.example/test'}:r)])assert.throws(()=>f.context.saveUniversitySourceLinks_(f.admin,{...p,pages}));
+ for(const pages of [p.pages.slice(1),p.pages.map((r,i)=>i===1?{...r,url:p.pages[0].url}:r),p.pages.map((r,i)=>i===1?{...r,url:'javascript:alert(1)'}:r)])assert.throws(()=>f.context.saveUniversitySourceLinks_(f.admin,{...p,pages}));
  assert.equal(f.tables.Backlink_Assignments.rows[0]['Source URL'],'https://geduconnect.com/university/vgu-online');
 });
 
