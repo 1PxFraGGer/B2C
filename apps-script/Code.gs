@@ -280,7 +280,6 @@ function createBacklink_(user,p){
   const member=unique_(table_('Team_Members').rows,p.memberId,'Member ID'),platforms=backlinkPlatforms_(p.memberId);
   if(!['MEM-GAURANSHI','MEM-PAYAL'].includes(p.memberId)||member.Team!=='Backlink Team'||member['Active Status']!=='Active'||platforms.length!==3)failure_('Select an active backlink member with configured platforms');
   const sourceUrl=backlinkUrl_(p.sourceUrl,true);
-  if(!/^https?:\/\/(?:www\.)?geduconnect\.(?:com|in)(?:[/?#]|$)/i.test(sourceUrl))failure_('Enter a GEDUCONNECT source link');
   const d=backlinkTables_(),previous=d.assignments.find(r=>r['Request ID']===p.operationId);
   if(previous)return {assignment:backlinkView_(previous,d.submissions),duplicate:true};
   if(d.assignments.some(r=>r['Member ID']===p.memberId&&String(r['Source URL']).replace(/\/$/,'')===sourceUrl.replace(/\/$/,'')))failure_('This link is already assigned to this member',409);
@@ -314,8 +313,7 @@ function saveBacklink_(user,p){
 const BACKLINK_UNIVERSITY_PAGES = [['Overview',''],['Program & Fees','program-fees'],['Admission process','admission-process'],['Placement & Career Support','placement-career-support'],['Student Support','student-support'],['FAQs','faqs']];
 function backlinkUniversityBase_(value){
   const url=backlinkUrl_(value,true).replace(/\/$/,'');
-  if(!/^https:\/\/(?:www\.)?geduconnect\.com\/university\/[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(url))failure_('Enter the GEDUCONNECT university overview link, such as https://geduconnect.com/university/vgu-online');
-  return url.replace(/^https:\/\/(?:www\.)?/i,'https://').replace('GEDUCONNECT.COM','geduconnect.com');
+  return url;
 }
 const INDIVIDUAL_BACKLINK_MEMBERS = ['MEM-PAYAL','MEM-SAKSHI','MEM-SHIVANI','MEM-DEEPANSH'];
 function assignmentMembers_(p,legacy){
@@ -383,7 +381,7 @@ function createBacklinkExam_(user,p){
 
 function universitySourcePages_(pages){
   if(!Array.isArray(pages)||pages.length!==6||pages.some((p,i)=>!p||p.name!==BACKLINK_UNIVERSITY_PAGES[i][0]))failure_('Provide all six named university page links');
-  const result=pages.map(p=>{const url=backlinkUrl_(p.url,true);if(!/^https?:\/\/(?:www\.)?geduconnect\.(?:com|in)(?:[/?#]|$)/i.test(url))failure_('Each source must be a GEDUCONNECT web link');return {name:p.name,url};});
+  const result=pages.map(p=>({name:p.name,url:backlinkUrl_(p.url,true)}));
   if(new Set(result.map(p=>p.url.replace(/\/$/,''))).size!==6)failure_('Each university page needs a different source link');
   return result;
 }
@@ -430,4 +428,3 @@ function saveUniversitySourceLinks_(user,p){
   Sheets.Spreadsheets.batchUpdate({requests},SHEET_ID);
   return {updated:after.length};
 }
-
