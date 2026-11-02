@@ -317,7 +317,7 @@ function backlinkUniversityBase_(value){
 }
 const INDIVIDUAL_BACKLINK_MEMBERS = ['MEM-PAYAL','MEM-SAKSHI','MEM-SHIVANI','MEM-DEEPANSH'];
 function assignmentMembers_(p,legacy){
-  if(p.memberId!==undefined&&!INDIVIDUAL_BACKLINK_MEMBERS.includes(p.memberId))failure_('Select Payal, Sakshi, Shivani or Deepansh');
+  if(p.memberId!==undefined&&![...INDIVIDUAL_BACKLINK_MEMBERS,'MEM-GAURANSHI'].includes(p.memberId))failure_('Select an active backlink member');
   const ids=p.memberId!==undefined?[p.memberId]:legacy;
   return ids.map(id=>{const m=unique_(table_('Team_Members').rows,id,'Member ID');if(m.Team!=='Backlink Team'||m['Active Status']!=='Active'||backlinkPlatforms_(id).length!==3)failure_('Select an active backlink team member');return m;});
 }
@@ -327,7 +327,7 @@ function createBacklinkUniversity_(user,p){
   if(typeof p.university!=='string'||!p.university.trim()||p.university.length>200)failure_('Enter a university name');
   const pages=p.pages?universitySourcePages_(p.pages):BACKLINK_UNIVERSITY_PAGES.map(page=>({name:page[0],url:backlinkUniversityBase_(p.sourceUrl)+(page[1]?'/'+page[1]:'')})),date=p.date;
   if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date)||isNaN(new Date(date+'T00:00:00Z').getTime())||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)failure_('Enter a valid assignment date');
-  const members=assignmentMembers_(p,['MEM-GAURANSHI','MEM-PAYAL']);
+  const members=assignmentMembers_(p,['MEM-GAURANSHI']);
   const d=backlinkTables_(),previous=d.assignments.filter(r=>r['Request ID']===p.operationId);
   if(previous.some(r=>!members.some(m=>m['Member ID']===r['Member ID'])))failure_('This save operation belongs to another employee. Try again.',409);
   if(previous.length)return {assignments:previous.map(r=>backlinkView_(r,d.submissions)),duplicate:true};
