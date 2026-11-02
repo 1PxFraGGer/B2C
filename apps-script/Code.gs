@@ -248,7 +248,7 @@ function checkSetup(){
   privateRoot_();Sheets.Spreadsheets.get(SHEET_ID,{fields:'spreadsheetId'});console.log('Google backend configuration verified.');
 }
 
-const BACKLINK_PLATFORMS = {'MEM-GAURANSHI':['LinkedIn','X','Threads'],'MEM-PAYAL':['Diigo','Blogger','Tumblr'],'MEM-SHIVANI':['Diigo','Blogger','Tumblr'],'MEM-DEEPANSH':['Diigo','Blogger','Tumblr'],'MEM-SAKSHI':['Diigo','Blogger','Tumblr'],'MEM-YASH':['LinkedIn','X','Threads'],'MEM-ARHAN':['Tumblr','Blogger','Diigo']};
+const BACKLINK_PLATFORMS = {'MEM-GAURANSHI':['LinkedIn','X','Threads'],'MEM-PAYAL':['Diigo','Tumblr'],'MEM-SHIVANI':['Diigo','Tumblr'],'MEM-DEEPANSH':['Diigo','Tumblr'],'MEM-SAKSHI':['Diigo','Tumblr'],'MEM-YASH':['LinkedIn','X','Threads'],'MEM-ARHAN':['Tumblr','Diigo']};
 function backlinkPlatforms_(memberId,row){const platforms=BACKLINK_PLATFORMS[memberId]||[];return ['MEM-ARHAN','MEM-PAYAL','MEM-SHIVANI','MEM-DEEPANSH','MEM-SAKSHI'].includes(memberId)&&row&&row['Assignment Type']==='Exam'&&row.Section==='News'?[...platforms,'Classified Ads']:platforms;}
 function backlinkUrl_(value,required){
   if(typeof value!=='string'||value.length>2048)failure_('Enter a valid web link');
@@ -278,12 +278,12 @@ function createBacklink_(user,p){
   if(user.role!=='admin')failure_('Only administrators can assign backlinks',403);
   operation_(p.operationId);
   const member=unique_(table_('Team_Members').rows,p.memberId,'Member ID'),platforms=backlinkPlatforms_(p.memberId);
-  if(!['MEM-GAURANSHI','MEM-PAYAL'].includes(p.memberId)||member.Team!=='Backlink Team'||member['Active Status']!=='Active'||platforms.length!==3)failure_('Select an active backlink member with configured platforms');
+  if(!['MEM-GAURANSHI','MEM-PAYAL'].includes(p.memberId)||member.Team!=='Backlink Team'||member['Active Status']!=='Active'||!platforms.length)failure_('Select an active backlink member with configured platforms');
   const sourceUrl=backlinkUrl_(p.sourceUrl,true);
   const d=backlinkTables_(),previous=d.assignments.find(r=>r['Request ID']===p.operationId);
   if(previous)return {assignment:backlinkView_(previous,d.submissions),duplicate:true};
   if(d.assignments.some(r=>r['Member ID']===p.memberId&&String(r['Source URL']).replace(/\/$/,'')===sourceUrl.replace(/\/$/,'')))failure_('This link is already assigned to this member',409);
-  const now=new Date().toISOString(),id='BL-'+Utilities.getUuid(),record={'Assignment ID':id,Date:Utilities.formatDate(new Date(),'Asia/Kolkata','yyyy-MM-dd'),Project:'GEDUCONNECT','Source URL':sourceUrl,'Assigned To':member['Employee Name'],'Member ID':p.memberId,'Required Platforms':3,'Completed Platforms':0,'Progress Percentage':0,'Overall Status':'Pending','Last Updated':now,Version:1,'Completed At':'','Request ID':p.operationId};
+  const now=new Date().toISOString(),id='BL-'+Utilities.getUuid(),record={'Assignment ID':id,Date:Utilities.formatDate(new Date(),'Asia/Kolkata','yyyy-MM-dd'),Project:'GEDUCONNECT','Source URL':sourceUrl,'Assigned To':member['Employee Name'],'Member ID':p.memberId,'Required Platforms':platforms.length,'Completed Platforms':0,'Progress Percentage':0,'Overall Status':'Pending','Last Updated':now,Version:1,'Completed At':'','Request ID':p.operationId};
   const items=platforms.map((platform,i)=>({'Submission ID':id+'-'+(i+1),'Assignment ID':id,'Member ID':p.memberId,Platform:platform,'Submission URL':'',Remarks:'',Status:'Pending','Last Updated':now,Version:1,'Completed At':''}));
   const actor={...user,memberId:p.memberId,name:user.name,team:'Backlink Team'};
   Sheets.Spreadsheets.batchUpdate({requests:[appendRecord_('Backlink_Assignments',record),...items.map(s=>appendRecord_('Backlink_Submissions',s)),logRequest_(actor,sourceUrl,'Backlink assignment',{},record,'Assignment Created',id,'',p.operationId)]},SHEET_ID);
@@ -319,7 +319,7 @@ const INDIVIDUAL_BACKLINK_MEMBERS = ['MEM-PAYAL','MEM-SAKSHI','MEM-SHIVANI','MEM
 function assignmentMembers_(p,legacy){
   if(p.memberId!==undefined&&![...INDIVIDUAL_BACKLINK_MEMBERS,'MEM-GAURANSHI'].includes(p.memberId))failure_('Select an active backlink member');
   const ids=p.memberId!==undefined?[p.memberId]:legacy;
-  return ids.map(id=>{const m=unique_(table_('Team_Members').rows,id,'Member ID');if(m.Team!=='Backlink Team'||m['Active Status']!=='Active'||backlinkPlatforms_(id).length!==3)failure_('Select an active backlink team member');return m;});
+  return ids.map(id=>{const m=unique_(table_('Team_Members').rows,id,'Member ID');if(m.Team!=='Backlink Team'||m['Active Status']!=='Active'||!backlinkPlatforms_(id).length)failure_('Select an active backlink team member');return m;});
 }
 function createBacklinkUniversity_(user,p){
   if(user.role!=='admin')failure_('Only administrators can assign universities',403);
@@ -332,7 +332,7 @@ function createBacklinkUniversity_(user,p){
   if(previous.some(r=>!members.some(m=>m['Member ID']===r['Member ID'])))failure_('This save operation belongs to another employee. Try again.',409);
   if(previous.length)return {assignments:previous.map(r=>backlinkView_(r,d.submissions)),duplicate:true};
   for(const m of members){
-    if(m.Team!=='Backlink Team'||m['Active Status']!=='Active'||backlinkPlatforms_(m['Member ID']).length!==3)failure_('Both backlink members must be active');
+    if(m.Team!=='Backlink Team'||m['Active Status']!=='Active'||!backlinkPlatforms_(m['Member ID']).length)failure_('Both backlink members must be active');
     const own=d.assignments.filter(r=>r['Member ID']===m['Member ID']&&r['Assignment Type']!=='Exam');
     const sources=pages.map(page=>page.url.replace(/\/$/,''));
     if(own.some(r=>sources.includes(String(r['Source URL']).replace(/\/$/,''))||(String(r.Date).slice(0,10)===date&&String(r['University Name']||'').trim().toLowerCase()===p.university.trim().toLowerCase())))failure_('This university is already assigned to '+m['Employee Name'],409);
@@ -341,7 +341,8 @@ function createBacklinkUniversity_(user,p){
   }
   const now=new Date().toISOString(),records=[],items=[],requests=[];
   for(const m of members)for(const page of pages){
-    const id='BL-'+Utilities.getUuid(),sourceUrl=page.url,record={'Assignment ID':id,Date:date,Project:'GEDUCONNECT','Source URL':sourceUrl,'Assigned To':m['Employee Name'],'Member ID':m['Member ID'],'Required Platforms':3,'Completed Platforms':0,'Progress Percentage':0,'Overall Status':'Pending','Last Updated':now,Version:1,'Completed At':'','Request ID':p.operationId,'University Name':p.university.trim(),'Page Name':page.name,'Assignment Type':'University'};
+    const platforms=backlinkPlatforms_(m['Member ID']);
+    const id='BL-'+Utilities.getUuid(),sourceUrl=page.url,record={'Assignment ID':id,Date:date,Project:'GEDUCONNECT','Source URL':sourceUrl,'Assigned To':m['Employee Name'],'Member ID':m['Member ID'],'Required Platforms':platforms.length,'Completed Platforms':0,'Progress Percentage':0,'Overall Status':'Pending','Last Updated':now,Version:1,'Completed At':'','Request ID':p.operationId,'University Name':p.university.trim(),'Page Name':page.name,'Assignment Type':'University'};
     records.push(record);requests.push(appendRecord_('Backlink_Assignments',record));
     backlinkPlatforms_(m['Member ID']).forEach((platform,i)=>{const s={'Submission ID':id+'-'+(i+1),'Assignment ID':id,'Member ID':m['Member ID'],Platform:platform,'Submission URL':'',Remarks:'',Status:'Pending','Last Updated':now,Version:1,'Completed At':''};items.push(s);requests.push(appendRecord_('Backlink_Submissions',s));});
     requests.push(logRequest_({...user,memberId:m['Member ID'],team:'Backlink Team'},p.university.trim(),page.name,{},record,'Assignment Created',id,'',p.operationId));
