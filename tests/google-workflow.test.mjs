@@ -106,7 +106,7 @@ function backlinkFixture(options){
  f.create=(memberId='MEM-GAURANSHI',sourceUrl='https://www.geduconnect.in/university/test')=>f.context.createBacklink_(f.admin,{memberId,sourceUrl,operationId:randomUUID()}).assignment;
  return f;
 }
-test('admin assigns one source link and exactly the member-specific platforms',()=>{
+test('admin assigns one source link and exactly the member-specific three platforms',()=>{
  const f=backlinkFixture(),op=randomUUID(),p={memberId:'MEM-GAURANSHI',sourceUrl:'https://www.geduconnect.in/university/test',operationId:op};
  assert.throws(()=>f.context.createBacklink_(f.gauranshi,p),e=>e.status===403);
  assert.throws(()=>f.context.createBacklink_(f.admin,{...p,sourceUrl:'javascript:alert(1)'}),/http or https/);
@@ -116,7 +116,7 @@ test('admin assigns one source link and exactly the member-specific platforms',(
  assert.equal(f.context.createBacklink_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Assignments.rows.length,1);
  assert.throws(()=>f.context.createBacklink_(f.admin,{...p,operationId:randomUUID()}),e=>e.status===409);
  const second=f.create('MEM-PAYAL');
- assert.deepEqual(Array.from(second.platforms),['Diigo','Tumblr']);assert.equal(f.tables.Backlink_Submissions.rows.length,5);
+ assert.deepEqual(Array.from(second.platforms),['Diigo','Blogger','Tumblr']);assert.equal(f.tables.Backlink_Submissions.rows.length,6);
  assert.throws(()=>f.context.createBacklink_(f.admin,{...p,memberId:'MEM-SAHIL',operationId:randomUUID()}));
 });
 test('each member can only read and edit their own assignments and allowed platforms',()=>{
@@ -180,10 +180,10 @@ test('university creation fails as one batch and .com sources retain the origina
 });
 
 function examBacklinkPayload(){return {exam:'JEE Main',date:'2026-10-22',articles:Array.from({length:6},(_,i)=>'https://example.com/article/'+(i+1)),news:Array.from({length:4},(_,i)=>'https://example.com/news/'+(i+1)),operationId:randomUUID()};}
-test('exam assignment creates 6 Articles and 4 News for each member with 30 and 24 submissions',()=>{
+test('exam assignment creates 6 Articles and 4 News for each member with 30 and 34 submissions',()=>{
  const f=backlinkFixture(),p=examBacklinkPayload();assert.throws(()=>f.context.createBacklinkExam_(f.gauranshi,p),e=>e.status===403);
- const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,30);assert.equal(f.tables.Backlink_Submissions.rows.length,78);
- for(const [id,count] of [['MEM-YASH',30],['MEM-ARHAN',24],['MEM-PAYAL',24]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.length,10);assert.equal(rows.filter(r=>r.section==='Articles').length,6);assert.equal(rows.filter(r=>r.section==='News').length,4);assert.equal(rows.reduce((n,r)=>n+r.total,0),count);assert(rows.every(r=>r.assignmentType==='Exam'&&r.exam==='JEE Main'));}
+ const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,30);assert.equal(f.tables.Backlink_Submissions.rows.length,98);
+ for(const [id,count] of [['MEM-YASH',30],['MEM-ARHAN',34],['MEM-PAYAL',34]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.length,10);assert.equal(rows.filter(r=>r.section==='Articles').length,6);assert.equal(rows.filter(r=>r.section==='News').length,4);assert.equal(rows.reduce((n,r)=>n+r.total,0),count);assert(rows.every(r=>r.assignmentType==='Exam'&&r.exam==='JEE Main'));}
  assert.equal(new Set(r.assignments.map(r=>r.examGroupId)).size,1);
  assert(r.assignments.filter(r=>r.memberId==='MEM-YASH').every(r=>!r.platforms.includes('Classified Ads')));
  assert(r.assignments.filter(r=>r.memberId==='MEM-ARHAN'&&r.section==='Articles').every(r=>!r.platforms.includes('Classified Ads')));
@@ -191,14 +191,14 @@ test('exam assignment creates 6 Articles and 4 News for each member with 30 and 
  assert.equal(f.context.createBacklinkExam_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Assignments.rows.length,30);
  assert.throws(()=>f.context.createBacklinkExam_(f.admin,{...p,operationId:randomUUID()}),e=>e.status===409);
 });
-test('Classified Ads is rejected for Articles and Yash; Arhan News needs all three submissions',()=>{
+test('Classified Ads is rejected for Articles and Yash; Arhan News needs all four submissions',()=>{
  const f=backlinkFixture(),r=f.context.createBacklinkExam_(f.admin,examBacklinkPayload()),arhan={memberId:'MEM-ARHAN',role:'employee',team:'Backlink Team',name:'Arhan'},yash={...arhan,memberId:'MEM-YASH',name:'Yash'};
  const article=r.assignments.find(r=>r.memberId===arhan.memberId&&r.section==='Articles'),news=r.assignments.find(r=>r.memberId===arhan.memberId&&r.section==='News'),yashNews=r.assignments.find(r=>r.memberId===yash.memberId&&r.section==='News');
  const payload=(row,platform,version=1)=>({assignmentId:row.id,platform,version,submissionUrl:'https://published.example/'+platform.replaceAll(' ','-'),remarks:'',operationId:randomUUID()});
  assert.throws(()=>f.context.saveBacklink_(arhan,payload(article,'Classified Ads')),e=>e.status===403);assert.throws(()=>f.context.saveBacklink_(yash,payload(yashNews,'Classified Ads')),e=>e.status===403);assert.throws(()=>f.context.saveBacklink_(yash,payload(news,'Blogger')),e=>e.status===403);
- let updated;for(const [i,platform] of ['Tumblr','Diigo'].entries())updated=f.context.saveBacklink_(arhan,payload(news,platform,i+1)).assignment;
- assert.equal(updated.completed,2);assert.equal(updated.total,3);assert.equal(updated.status,'In Progress');updated=f.context.saveBacklink_(arhan,payload(news,'Classified Ads',3)).assignment;assert.equal(updated.status,'Completed');assert.equal(updated.completed,3);
- assert.equal(f.context.saveBacklink_(arhan,{...payload(news,'Classified Ads',4),submissionUrl:''}).assignment.status,'In Progress');
+ let updated;for(const [i,platform] of ['Tumblr','Blogger','Diigo'].entries())updated=f.context.saveBacklink_(arhan,payload(news,platform,i+1)).assignment;
+ assert.equal(updated.completed,3);assert.equal(updated.total,4);assert.equal(updated.status,'In Progress');updated=f.context.saveBacklink_(arhan,payload(news,'Classified Ads',4)).assignment;assert.equal(updated.status,'Completed');assert.equal(updated.completed,4);
+ assert.equal(f.context.saveBacklink_(arhan,{...payload(news,'Classified Ads',5),submissionUrl:''}).assignment.status,'In Progress');
 });
 test('exam links reject empty or oversized sections, duplicate sources, invalid dates and unsafe URLs before writing',()=>{
  const f=backlinkFixture(),p=examBacklinkPayload();for(const invalid of [{...p,articles:[]},{...p,news:[]},{...p,articles:[...p.articles,'https://example.com/extra']},{...p,news:[...p.news,'https://example.com/extra']},{...p,news:[p.articles[0],...p.news.slice(1)]},{...p,date:'2026-02-30'},{...p,articles:['javascript:alert(1)',...p.articles.slice(1)]}])assert.throws(()=>f.context.createBacklinkExam_(f.admin,invalid));assert.equal(f.tables.Backlink_Assignments.rows.length,0);
@@ -207,9 +207,9 @@ test('exam links reject empty or oversized sections, duplicate sources, invalid 
 
 test('CLAT with five articles and three news links produces no empty slots or inflated totals',()=>{
  const f=backlinkFixture(),p=examBacklinkPayload();p.exam='CLAT';p.articles=p.articles.slice(0,5);p.news=p.news.slice(0,3);
- const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,24);assert.equal(f.tables.Backlink_Submissions.rows.length,62);
- for(const [id,total] of [['MEM-YASH',24],['MEM-ARHAN',19],['MEM-PAYAL',19]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.filter(r=>r.section==='Articles').length,5);assert.equal(rows.filter(r=>r.section==='News').length,3);assert.equal(rows.reduce((n,r)=>n+r.total,0),total);assert(rows.every(r=>r.sourceUrl));}
- assert.equal(f.context.createBacklinkExam_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Submissions.rows.length,62);
+ const r=f.context.createBacklinkExam_(f.admin,p);assert.equal(r.assignments.length,24);assert.equal(f.tables.Backlink_Submissions.rows.length,78);
+ for(const [id,total] of [['MEM-YASH',24],['MEM-ARHAN',27],['MEM-PAYAL',27]]){const rows=r.assignments.filter(r=>r.memberId===id);assert.equal(rows.filter(r=>r.section==='Articles').length,5);assert.equal(rows.filter(r=>r.section==='News').length,3);assert.equal(rows.reduce((n,r)=>n+r.total,0),total);assert(rows.every(r=>r.sourceUrl));}
+ assert.equal(f.context.createBacklinkExam_(f.admin,p).duplicate,true);assert.equal(f.tables.Backlink_Submissions.rows.length,78);
 });
 
 function customUniversityPages(){return [['Overview','https://geduconnect.com/university/custom-main'],['Program & Fees','https://geduconnect.com/custom-fees'],['Admission process','https://geduconnect.com/admissions/custom'],['Placement & Career Support','https://geduconnect.com/career-services'],['Student Support','https://geduconnect.com/help/custom'],['FAQs','https://geduconnect.com/questions-custom']].map(([name,url])=>({name,url}));}
@@ -237,7 +237,7 @@ test('source link corrections reject duplicate, incomplete and unsafe URLs befor
  assert.equal(f.tables.Backlink_Assignments.rows[0]['Source URL'],'https://geduconnect.com/university/vgu-online');
 });
 
-test('Payal News supports Classified Ads and uses two university platforms',()=>{const f=backlinkFixture(),r=f.context.createBacklinkExam_(f.admin,examBacklinkPayload()),own=r.assignments.filter(r=>r.memberId==='MEM-PAYAL');assert(own.filter(r=>r.section==='Articles').every(r=>r.total===2&&!r.platforms.includes('Classified Ads')));const news=own.find(r=>r.section==='News');assert.equal(news.total,3);const result=f.context.saveBacklink_(f.payal,{assignmentId:news.id,platform:'Classified Ads',submissionUrl:'https://example.com/classified',remarks:'',version:1,operationId:randomUUID()});assert.equal(result.assignment.completed,1);assert.equal(f.create('MEM-PAYAL','https://geduconnect.com/university/retained').total,2);});
+test('Payal News supports Classified Ads and retains three university platforms',()=>{const f=backlinkFixture(),r=f.context.createBacklinkExam_(f.admin,examBacklinkPayload()),own=r.assignments.filter(r=>r.memberId==='MEM-PAYAL');assert(own.filter(r=>r.section==='Articles').every(r=>r.total===3&&!r.platforms.includes('Classified Ads')));const news=own.find(r=>r.section==='News');assert.equal(news.total,4);const result=f.context.saveBacklink_(f.payal,{assignmentId:news.id,platform:'Classified Ads',submissionUrl:'https://example.com/classified',remarks:'',version:1,operationId:randomUUID()});assert.equal(result.assignment.completed,1);assert.equal(f.create('MEM-PAYAL','https://geduconnect.com/university/retained').total,3);});
 
 function examEditFixture(){const f=backlinkFixture(),created=f.context.createBacklinkExam_(f.admin,examBacklinkPayload()).assignments;f.context.saveBacklink_(f.payal,{assignmentId:created.find(r=>r.memberId==='MEM-PAYAL').id,platform:'Diigo',version:1,submissionUrl:'https://example.com/existing',remarks:'Keep this',operationId:randomUUID()});const links=created.filter(r=>r.memberId==='MEM-YASH').map(r=>({section:r.section,linkNumber:r.linkNumber,url:r.sourceUrl}));links[0].url='https://example.com/corrected-article';return {...f,p:{assignmentId:created[0].id,links,versions:f.tables.Backlink_Assignments.rows.map(r=>({id:r['Assignment ID'],version:r.Version})),operationId:randomUUID()}};}
 test('admin exam source correction updates matching slots for all owners and preserves submissions and progress',()=>{const f=examEditFixture(),before=JSON.stringify(f.tables.Backlink_Submissions.rows),progress=f.tables.Backlink_Assignments.rows.map(r=>[r['Completed Platforms'],r['Overall Status']]);assert.throws(()=>f.context.saveExamSourceLinks_(f.payal,f.p),e=>e.status===403);assert.equal(f.context.saveExamSourceLinks_(f.admin,f.p).updated,3);assert.equal(JSON.stringify(f.tables.Backlink_Submissions.rows),before);assert.deepEqual(f.tables.Backlink_Assignments.rows.map(r=>[r['Completed Platforms'],r['Overall Status']]),progress);assert.equal(f.tables.Backlink_Assignments.rows.filter(r=>r['Source URL']===f.p.links[0].url).length,3);assert.equal(f.context.saveExamSourceLinks_(f.admin,f.p).duplicate,true);assert.throws(()=>f.context.saveExamSourceLinks_(f.admin,{...f.p,operationId:randomUUID()}),e=>e.status===409);});
@@ -245,15 +245,4 @@ test('exam source correction rejects incomplete, duplicate, unsafe and stale inp
 
 test('member sessions use the current team and inactive accounts are rejected',()=>{const f=backlinkFixture(),row=f.tables.Team_Members.rows.find(r=>r['Member ID']==='MEM-PAYAL');row['Auth Subject']='MEM-PAYAL';row['Login ID']='payal@example.com';const identity={id:'MEM-PAYAL',role:'employee',loginId:'payal@example.com'};assert.equal(f.context.profile_(identity).team,'Backlink Team');row['Active Status']='Inactive';assert.throws(()=>f.context.profile_(identity),e=>e.status===403);});
 
-test('Shivani and Deepansh have two article platforms and Classified Ads only on News',()=>{const f=backlinkFixture();for(const id of ['MEM-SHIVANI','MEM-DEEPANSH','MEM-SAKSHI']){assert.deepEqual(Array.from(f.context.backlinkPlatforms_(id,{'Assignment Type':'Exam',Section:'Articles'})),['Diigo','Tumblr']);assert.deepEqual(Array.from(f.context.backlinkPlatforms_(id,{'Assignment Type':'Exam',Section:'News'})),['Diigo','Tumblr','Classified Ads']);}});
-
-test('retired Blogger submissions are preserved but excluded from progress and cannot be saved',()=>{
- const f=backlinkFixture(),a=f.create('MEM-PAYAL','https://example.com/retired');
- const row=f.tables.Backlink_Assignments.rows.find(r=>r['Assignment ID']===a.id);
- f.tables.Backlink_Submissions.rows.push({'Submission ID':a.id+'-old-blogger','Assignment ID':a.id,'Member ID':'MEM-PAYAL',Platform:'Blogger','Submission URL':'https://example.com/old-post',Status:'Done'});
- let view=f.context.backlinkView_(row,f.tables.Backlink_Submissions.rows);assert.equal(view.total,2);assert.equal(view.completed,0);assert(!view.submissions.some(s=>s.platform==='Blogger'));
- for(const [i,platform] of ['Diigo','Tumblr'].entries())view=f.context.saveBacklink_(f.payal,{assignmentId:a.id,platform,submissionUrl:'https://example.com/'+platform,remarks:'',version:i+1,operationId:randomUUID()}).assignment;
- assert.equal(view.status,'Completed');assert.equal(view.completed,2);assert.equal(view.total,2);
- assert.throws(()=>f.context.saveBacklink_(f.payal,{assignmentId:a.id,platform:'Blogger',submissionUrl:'https://example.com/new',version:3,operationId:randomUUID()}),e=>e.status===403);
- assert(f.tables.Backlink_Submissions.rows.some(s=>s['Submission URL']==='https://example.com/old-post'));
-});
+test('Shivani and Deepansh have three article platforms and Classified Ads only on News',()=>{const f=backlinkFixture();for(const id of ['MEM-SHIVANI','MEM-DEEPANSH','MEM-SAKSHI']){assert.deepEqual(Array.from(f.context.backlinkPlatforms_(id,{'Assignment Type':'Exam',Section:'Articles'})),['Diigo','Blogger','Tumblr']);assert.deepEqual(Array.from(f.context.backlinkPlatforms_(id,{'Assignment Type':'Exam',Section:'News'})),['Diigo','Blogger','Tumblr','Classified Ads']);}});
